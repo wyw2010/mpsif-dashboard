@@ -6,10 +6,7 @@ positions, fetches prices from yfinance, and computes return/risk metrics.
 
 import pandas as pd
 import numpy as np
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.data.enums import DataFeed
+import requests as _requests
 from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
@@ -172,13 +169,9 @@ def build_daily_positions(snapshots, start, end):
     return daily
 
 
-# ── 3. Prices (Alpaca Market Data + file cache) ──────────────────────────
+# ── 3. Prices (Alpaca Market Data REST + file cache) ─────────────────────
 PRICE_CACHE_PATH = Path("data/price_cache.csv")
-
-_alpaca_client = StockHistoricalDataClient(
-    api_key=os.getenv("ALPACA_API_KEY"),
-    secret_key=os.getenv("ALPACA_SECRET_KEY"),
-)
+_ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks/bars"
 
 
 def _load_price_cache() -> pd.DataFrame:
@@ -199,20 +192,38 @@ def _save_price_cache(df: pd.DataFrame):
 
 
 def _fetch_alpaca_batch(tickers: list, start: str, end: str) -> pd.DataFrame:
-    """Fetch close prices for multiple tickers in one Alpaca API call."""
-    req = StockBarsRequest(
-        symbol_or_symbols=tickers,
-        timeframe=TimeFrame.Day,
-        start=pd.Timestamp(start).to_pydatetime(),
-        end=pd.Timestamp(end).to_pydatetime(),
-        feed=DataFeed.IEX,
-    )
-    bars = _alpaca_client.get_stock_bars(req)
-    df = bars.df  # MultiIndex: (symbol, timestamp)
-    if df.empty:
+    """Fetch close prices via Alpaca REST API (no SDK needed)."""
+    headers = {
+        "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY", ""),
+        "APCA-API-SECRET-KEY": os.getenv("ALPACA_SECRET_KEY", ""),
+    }
+    all_bars = []
+    # Alpaca REST accepts comma-separated symbols
+    params = {
+        "symbols": ",".join(tickers),
+        "timeframe": "1Day",
+        "start": pd.Timestamp(start).strftime("%Y-%m-%dT00:00:00Z"),
+        "end": pd.Timestamp(end).strftime("%Y-%m-%dT00:00:00Z"),
+        "feed": "iex",
+        "limit": 10000,
+    }
+    next_token = None
+    while True:
+        if next_token:
+            params["page_token"] = next_token
+        resp = _requests.get(_ALPACA_DATA_URL, headers=headers, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for sym, bars in data.get("bars", {}).items():
+            for bar in bars:
+                all_bars.append({"symbol": sym, "timestamp": bar["t"], "close": bar["c"]})
+        next_token = data.get("next_page_token")
+        if not next_token:
+            break
+
+    if not all_bars:
         return pd.DataFrame()
-    # Pivot to columns=tickers, index=date, values=close
-    df = df.reset_index()
+    df = pd.DataFrame(all_bars)
     df["date"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None).dt.normalize()
     pivot = df.pivot_table(index="date", columns="symbol", values="close")
     return pivot
