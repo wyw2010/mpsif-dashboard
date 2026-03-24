@@ -14,6 +14,7 @@ import os
 import json
 import logging
 import streamlit as st
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -30,6 +31,17 @@ BENCHMARKS = {
     "Fixed Income": "AGG",
 }
 RISK_FREE_RATE = 0.05  # annualised
+EST = ZoneInfo("America/New_York")
+
+
+def _now_est() -> datetime:
+    """Current wall-clock time in US Eastern."""
+    return datetime.now(EST)
+
+
+def _today_est() -> pd.Timestamp:
+    """Today's date in US Eastern (tz-naive Timestamp)."""
+    return pd.Timestamp(_now_est().date())
 
 
 # ── Config management ──────────────────────────────────────────────────────
@@ -236,7 +248,10 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     log.info(f"fetch_prices called for {len(tickers)} tickers, range {start} → {end}")
-    today = pd.Timestamp.today().normalize()
+    today = _today_est()
+    now = _now_est()
+    # During market hours (9:30am-4pm ET on weekdays), always re-fetch
+    market_open = now.weekday() < 5 and 9 <= now.hour < 17
 
     # Load file-based cache
     cache = _load_price_cache()
@@ -250,7 +265,13 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
             tickers_to_fetch.append(t)
         else:
             last_date = cache[t].dropna().index.max() if cache[t].notna().any() else None
-            if last_date is None or last_date < today - pd.Timedelta(days=3):
+            if last_date is None:
+                tickers_to_fetch.append(t)
+            elif market_open and last_date < today:
+                # During market hours, re-fetch if cache doesn't have today
+                tickers_to_fetch.append(t)
+            elif not market_open and last_date < today - pd.Timedelta(days=1):
+                # After hours, re-fetch if cache is more than 1 day old
                 tickers_to_fetch.append(t)
 
     if tickers_to_fetch:
@@ -391,12 +412,15 @@ def period_returns(rets: pd.Series):
     if rets.empty:
         return {}
     d = rets.index[-1]
+    today = _today_est()
     out = {}
     if len(rets) >= 1:
         out["1D"] = float(rets.iloc[-1])
     out["1W"] = total_ret(rets[rets.index > d - pd.Timedelta(days=7)])
     out["1M"] = total_ret(rets[rets.index > d - pd.DateOffset(months=1)])
-    out["YTD"] = total_ret(rets[rets.index >= pd.Timestamp(d.year, 1, 1)])
+    # Use EST year for YTD
+    ytd_year = today.year
+    out["YTD"] = total_ret(rets[rets.index >= pd.Timestamp(ytd_year, 1, 1)])
     out["1Y"] = total_ret(rets[rets.index > d - pd.DateOffset(years=1)])
     return out
 
@@ -595,7 +619,7 @@ def build_subfund(csv_path: str):
     log.info(f"  Reconstructed {len(snapshots)} position snapshots, {len(dividends)} dividends")
 
     first_buy = txns[txns["ActionType"] == "BUY"]["Date"].min()
-    end_date = pd.Timestamp.today().normalize()
+    end_date = _today_est()
     log.info(f"  Date range: {first_buy.date()} → {end_date.date()}")
 
     daily_pos = build_daily_positions(snapshots, first_buy, end_date)
