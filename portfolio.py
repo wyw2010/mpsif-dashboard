@@ -552,45 +552,7 @@ FACTOR_ETFS = {
     "Defensive": "USMV",
 }
 
-"""
-def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
-    # Regress portfolio returns on factor ETF returns (multivariate OLS).
-    tickers = list(FACTOR_ETFS.values())
-    prices = fetch_prices(tickers, start, end)
-    if prices.empty:
-        log.warning("Factor betas: no price data returned")
-        return {name: 0.0 for name in FACTOR_ETFS}
-
-    factor_rets = prices.pct_change().dropna()
-
-    # Normalize both indices to date-only for alignment
-    port_clean = port_rets.copy()
-    port_clean.index = port_clean.index.normalize()
-    factor_rets.index = factor_rets.index.normalize()
-
-    aligned = pd.concat([port_clean.rename("port")] + [
-        factor_rets[t].rename(name) for name, t in FACTOR_ETFS.items()
-        if t in factor_rets.columns
-    ], axis=1).dropna()
-
-    log.info(f"Factor betas: {len(port_clean)} port days, {len(factor_rets)} factor days, {len(aligned)} aligned days")
-
-    if len(aligned) < 10:
-        log.warning(f"Factor betas: only {len(aligned)} aligned days, need at least 10")
-        return {name: 0.0 for name in FACTOR_ETFS}
-
-    y = aligned["port"].values
-    factor_names = [c for c in aligned.columns if c != "port"]
-    X = aligned[factor_names].values
-    X = np.column_stack([np.ones(len(X)), X])
-
-    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-    result = {name: round(float(coeffs[i + 1]), 3) for i, name in enumerate(factor_names)}
-    log.info(f"Factor betas: {result}")
-    return result
-"""
-
-# based on own factor construction
+# Uses custom factor construction from data.pk (contributed by al7816-cmd)
 def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
     """Regress portfolio returns on factor returns from data.pk (multivariate OLS, trailing 6 months)."""
     
@@ -625,16 +587,16 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
         log.warning(f"Factor betas: only {len(aligned)} aligned days, need at least 10")
         return {col: 0.0 for col in factor_rets.columns}
 
-    # Regression
-    y = aligned["port"].values
+    # Regression — force float64 to avoid object dtype from mixed sources
+    y = aligned["port"].values.astype(np.float64)
     factor_names = [c for c in aligned.columns if c != "port"]
-    X = aligned[factor_names].values
+    X = aligned[factor_names].values.astype(np.float64)
     X = np.column_stack([np.ones(len(X)), X])  # add intercept
 
     coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
 
     result = {
-        name: round(float(coeffs[i + 1]), 3)
+        name.title(): round(float(coeffs[i + 1]), 3)
         for i, name in enumerate(factor_names)
     }
 
