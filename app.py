@@ -48,8 +48,10 @@ st.markdown(f"""
         font-weight: 500 !important;
     }}
 
-    .main .block-container {{ padding-top: 0.5rem; max-width: 1200px; }}
-    .stAppHeader {{ display: none; }}
+    .main .block-container {{ padding-top: 0 !important; max-width: 1200px; }}
+    .stAppHeader, [data-testid="stHeader"] {{ display: none !important; height: 0 !important; }}
+    .stApp > header {{ display: none !important; }}
+    .stMainBlockContainer {{ padding-top: 0.5rem !important; }}
 
     /* ── Logo ── */
     .logo {{
@@ -157,10 +159,10 @@ st.markdown(f"""
         .metric-card {{
             padding: 0.6rem 0.4rem !important;
             border-radius: 8px !important;
-            margin-bottom: 0.75rem !important;
+            margin-bottom: 1rem !important;
         }}
         [data-testid="stHorizontalBlock"] {{
-            row-gap: 1rem !important;
+            row-gap: 1.25rem !important;
         }}
         .metric-label {{
             font-size: 0.6rem !important;
