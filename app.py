@@ -548,37 +548,36 @@ def load_benchmark_returns(subfund_data):
 
 
 def combine_returns(subfund_data: dict) -> pd.Series:
-    """AUM-weighted combined return across sub-funds.
-    Each day, weights are based on prior-day portfolio values."""
-    vals = {}
-    rets = {}
+    """AUM-weighted average of sub-fund daily returns.
+    Weight each fund's return by its prior-day AUM share."""
+    if len(subfund_data) == 1:
+        # Single fund — just return its returns directly
+        return list(subfund_data.values())[0]["returns"]
+
+    fund_rets = {}
+    fund_aum = {}
     for name, d in subfund_data.items():
+        r = d["returns"]
         pv = d["portfolio_values"]["Total"]
-        pv = pv[pv > 0]  # drop zero/pre-funding rows
-        if len(pv) < 2:
+        pv = pv[pv > 0]
+        if r.empty or len(pv) < 2:
             continue
-        vals[name] = pv
-        rets[name] = d["returns"]
-    if not rets:
+        fund_rets[name] = r
+        fund_aum[name] = pv
+
+    if not fund_rets:
         return pd.Series(dtype=float)
 
-    # Align all to common date index
-    val_df = pd.DataFrame(vals).sort_index().ffill()
-    ret_df = pd.DataFrame(rets).sort_index()
+    ret_df = pd.DataFrame(fund_rets).sort_index().fillna(0)
+    aum_df = pd.DataFrame(fund_aum).sort_index().ffill().reindex(ret_df.index).ffill().fillna(0)
 
-    # Only include dates where at least one fund has returns
-    common_dates = ret_df.dropna(how="all").index
-    val_df = val_df.reindex(common_dates).ffill()
-    ret_df = ret_df.reindex(common_dates).fillna(0)
+    # Prior-day AUM weights
+    weights = aum_df.shift(1).dropna(how="all")
+    row_totals = weights.sum(axis=1)
+    weights = weights.div(row_totals, axis=0).fillna(0)
 
-    # AUM weights from prior day
-    weights = val_df.shift(1).dropna(how="all")
-    weights = weights.div(weights.sum(axis=1), axis=0).fillna(0)
-
-    # Weighted return
-    aligned_dates = weights.index.intersection(ret_df.index)
-    weighted = (ret_df.loc[aligned_dates] * weights.loc[aligned_dates]).sum(axis=1)
-    return weighted
+    common = weights.index.intersection(ret_df.index)
+    return (ret_df.loc[common] * weights.loc[common]).sum(axis=1)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
