@@ -327,7 +327,11 @@ def html_table(df: pd.DataFrame, raw_df: pd.DataFrame = None,
 
 
 # Plotly config: hide toolbar on mobile, minimal on desktop
-PLOTLY_CFG = {"displayModeBar": False}
+PLOTLY_CFG = {
+    "displayModeBar": True,
+    "modeBarButtonsToRemove": ["select2d", "lasso2d", "autoScale2d"],
+    "toImageButtonOptions": {"format": "png", "scale": 4},
+}
 
 # ── Charts ─────────────────────────────────────────────────────────────────
 def make_return_chart(rets: pd.Series, height: int = 380,
