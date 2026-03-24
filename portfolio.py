@@ -241,6 +241,37 @@ def _fetch_alpaca_batch(tickers: list, start: str, end: str) -> pd.DataFrame:
     return pivot
 
 
+_ALPACA_SNAPSHOT_URL = "https://data.alpaca.markets/v2/stocks/snapshots"
+
+
+def _fetch_live_prices(tickers: list) -> dict:
+    """Fetch latest trade price for each ticker via Alpaca snapshots endpoint.
+    Returns {ticker: price} dict. Works during and after market hours."""
+    if not tickers:
+        return {}
+    headers = {
+        "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY", ""),
+        "APCA-API-SECRET-KEY": os.getenv("ALPACA_SECRET_KEY", ""),
+    }
+    params = {"symbols": ",".join(tickers), "feed": "iex"}
+    try:
+        resp = _requests.get(_ALPACA_SNAPSHOT_URL, headers=headers, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        result = {}
+        for sym, snap in data.items():
+            # Use latest trade price (most recent actual trade)
+            trade = snap.get("latestTrade") or snap.get("latest_trade") or {}
+            price = trade.get("p", 0)
+            if price > 0:
+                result[sym] = price
+        log.info(f"  Live prices fetched for {len(result)}/{len(tickers)} tickers")
+        return result
+    except Exception as e:
+        log.error(f"  Live price fetch failed: {e}")
+        return {}
+
+
 def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
     """Fetch daily close prices. Uses a local CSV cache to minimise API calls.
     Only fetches from Alpaca when cache is missing or stale."""
@@ -300,6 +331,25 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
         log.warning(f"  No price data available for any requested tickers")
         return pd.DataFrame()
     result = cache[available].loc[start:end]
+
+    # ── Live intraday overlay ──
+    # During market hours, fetch real-time prices and add/update today's row
+    if market_open and available:
+        live = _fetch_live_prices(available)
+        if live:
+            today_row = pd.DataFrame(
+                {t: [live.get(t, np.nan)] for t in available},
+                index=[today],
+            )
+            if today in result.index:
+                # Update today's row with live prices
+                for t, p in live.items():
+                    if t in result.columns:
+                        result.at[today, t] = p
+            else:
+                result = pd.concat([result, today_row])
+            log.info(f"  Live prices overlaid for {len(live)} tickers at {today.date()}")
+
     log.info(f"  Returning prices: {len(available)} tickers, {len(result)} rows")
     return result
 
