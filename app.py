@@ -3,16 +3,20 @@ NYU MPSIF Return Attribution Dashboard
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import base64
 from pathlib import Path
+from PIL import Image
 import portfolio as pf
 
 # ── Page config ────────────────────────────────────────────────────────────
+_logo = Image.open(Path("assets/nyu_stern_logo.png"))
 st.set_page_config(
     page_title="NYU MPSIF",
-    page_icon="🟣",
+    page_icon=_logo,
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -219,9 +223,18 @@ def html_table(df: pd.DataFrame, raw_df: pd.DataFrame = None,
     }})();
     </script>"""
 
-    return f"""<div style="max-height:{max_height}; overflow-y:auto;">
+    return f"""<html><head><style>
+    * {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 300; margin: 0; padding: 0; }}
+    .clean-table {{ width:100%; border-collapse:collapse; font-size:0.85rem; }}
+    .clean-table thead th {{ background:{NYU_PURPLE_BG}; color:{BLACK}; font-weight:500; font-size:0.8rem;
+        padding:0.6rem 0.75rem; text-align:left; border-bottom:2px solid #E5E7EB; cursor:pointer; user-select:none; }}
+    .clean-table tbody td {{ padding:0.5rem 0.75rem; border-bottom:1px solid #F3F4F6; font-weight:300; }}
+    .clean-table tbody tr:hover {{ background:#FAFAFA; }}
+    </style></head><body>
+    <div style="max-height:{max_height}; overflow-y:auto;">
     <table class="clean-table" id="{tid}"><thead><tr>{header}</tr></thead>
-    <tbody>{rows}</tbody></table></div>{script}"""
+    <tbody>{rows}</tbody></table></div>{script}
+    </body></html>"""
 
 
 # ── Charts ─────────────────────────────────────────────────────────────────
@@ -569,7 +582,7 @@ with tabs[0]:
                     "Sharpe": f"{pf.sharpe(r):.3f}",
                     "Max DD": fmt_pct(pf.max_dd(r) * 100),
                 })
-            st.markdown(html_table(pd.DataFrame(summary_rows), default_sort="Sub-Fund"), unsafe_allow_html=True)
+            components.html(html_table(pd.DataFrame(summary_rows), default_sort="Sub-Fund"), height=min(400, 45 * len(summary_rows) + 50), scrolling=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -690,8 +703,8 @@ for idx, name in enumerate(pf.SUBFUNDS):
             with hcol1:
                 st.plotly_chart(make_holdings_pie(holdings), use_container_width=True)
             with hcol2:
-                st.markdown(html_table(tbl, raw_df=raw_tbl, max_height="450px",
-                                       default_sort="Weight (%)", default_asc=False), unsafe_allow_html=True)
+                components.html(html_table(tbl, raw_df=raw_tbl, max_height="450px",
+                                       default_sort="Weight (%)", default_asc=False), height=min(500, 40 * len(tbl) + 55), scrolling=True)
         else:
             st.info("No current holdings.")
 
@@ -715,4 +728,18 @@ for idx, name in enumerate(pf.SUBFUNDS):
             total_div = div_df["Amount ($)"].sum()
             st.caption(f"Total dividend income: **${total_div:,.3f}**")
             div_df["Amount ($)"] = div_df["Amount ($)"].apply(lambda x: f"${x:,.3f}")
-            st.markdown(html_table(div_df, max_height="250px"), unsafe_allow_html=True)
+            components.html(html_table(div_df, max_height="250px"), height=min(300, 40 * len(div_df) + 55), scrolling=True)
+
+# ── Footer ────────────────────────────────────────────────────────────────
+_logo_path = Path("assets/nyu_stern_logo.png")
+if _logo_path.exists():
+    _logo_b64 = base64.b64encode(_logo_path.read_bytes()).decode()
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="text-align:center; padding: 1.5rem 0 2rem 0;">
+        <img src="data:image/png;base64,{_logo_b64}" alt="NYU Stern" style="height:45px; margin-bottom:0.5rem;" />
+        <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-weight:300; font-size:0.75rem; color:#6B7280;">
+            &copy; 2026 NYU Michael Price Student Investment Fund | Will Wu (willwu@stern.nyu.edu)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
