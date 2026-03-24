@@ -13,10 +13,10 @@ from PIL import Image
 import portfolio as pf
 
 # ── Page config ────────────────────────────────────────────────────────────
-_logo = Image.open(Path("assets/nyu_stern_logo.png"))
+_favicon = Image.open(Path("assets/favicon.png"))
 st.set_page_config(
     page_title="NYU MPSIF",
-    page_icon=_logo,
+    page_icon=_favicon,
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -127,6 +127,89 @@ st.markdown(f"""
         box-shadow: 0 4px 12px rgba(87, 6, 140, 0.15) !important;
         transform: translateY(-1px) !important;
     }}
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {{
+        .main .block-container {{
+            padding-top: 0.75rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }}
+
+        /* Logo */
+        .logo {{ font-size: 1.4rem !important; }}
+
+        /* Tabs: scrollable, smaller text */
+        .stTabs [data-baseweb="tab-list"] {{
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            -webkit-overflow-scrolling: touch;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            font-size: 0.8rem !important;
+            padding: 0.5rem 0.75rem !important;
+            white-space: nowrap !important;
+        }}
+
+        /* Metric cards: smaller */
+        .metric-card {{
+            padding: 0.6rem 0.4rem !important;
+            border-radius: 8px !important;
+        }}
+        .metric-label {{
+            font-size: 0.6rem !important;
+            letter-spacing: 0.25px !important;
+        }}
+        .metric-value {{
+            font-size: 0.95rem !important;
+        }}
+
+        /* Section headers */
+        .section-header {{
+            font-size: 0.95rem !important;
+            margin-top: 1rem !important;
+        }}
+
+        /* Columns: allow wrapping on small screens */
+        [data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap !important;
+            gap: 0.4rem !important;
+        }}
+        /* 5-col period returns: 3+2 layout */
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            min-width: 30% !important;
+        }}
+
+        /* Segmented controls: wrap and smaller */
+        [data-testid="stSegmentedControl"] {{
+            flex-wrap: wrap !important;
+            gap: 0.3rem !important;
+        }}
+        button[data-testid="stBaseButton-segmented_control"] {{
+            font-size: 0.75rem !important;
+            padding: 0.3rem 0.7rem !important;
+        }}
+
+        /* Tables: smaller text */
+        .clean-table {{ font-size: 0.75rem !important; }}
+        .clean-table thead th {{ font-size: 0.7rem !important; padding: 0.4rem 0.5rem !important; }}
+        .clean-table tbody td {{ padding: 0.35rem 0.5rem !important; }}
+
+        /* Footer */
+        .footer-logo {{ height: 30px !important; }}
+    }}
+
+    /* Extra small phones */
+    @media (max-width: 480px) {{
+        .logo {{ font-size: 1.2rem !important; }}
+        .metric-value {{ font-size: 0.85rem !important; }}
+        .metric-label {{ font-size: 0.55rem !important; }}
+        .metric-card {{ padding: 0.5rem 0.3rem !important; }}
+        .stTabs [data-baseweb="tab"] {{
+            font-size: 0.7rem !important;
+            padding: 0.4rem 0.5rem !important;
+        }}
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -223,13 +306,18 @@ def html_table(df: pd.DataFrame, raw_df: pd.DataFrame = None,
     }})();
     </script>"""
 
-    return f"""<html><head><style>
+    return f"""<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
     * {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 300; margin: 0; padding: 0; }}
     .clean-table {{ width:100%; border-collapse:collapse; font-size:0.85rem; }}
     .clean-table thead th {{ background:{NYU_PURPLE_BG}; color:{BLACK}; font-weight:500; font-size:0.8rem;
-        padding:0.6rem 0.75rem; text-align:left; border-bottom:2px solid #E5E7EB; cursor:pointer; user-select:none; }}
-    .clean-table tbody td {{ padding:0.5rem 0.75rem; border-bottom:1px solid #F3F4F6; font-weight:300; }}
+        padding:0.6rem 0.75rem; text-align:left; border-bottom:2px solid #E5E7EB; cursor:pointer; user-select:none; white-space:nowrap; }}
+    .clean-table tbody td {{ padding:0.5rem 0.75rem; border-bottom:1px solid #F3F4F6; font-weight:300; white-space:nowrap; }}
     .clean-table tbody tr:hover {{ background:#FAFAFA; }}
+    @media (max-width: 768px) {{
+        .clean-table {{ font-size:0.75rem; }}
+        .clean-table thead th {{ font-size:0.7rem; padding:0.4rem 0.5rem; }}
+        .clean-table tbody td {{ padding:0.35rem 0.5rem; }}
+    }}
     </style></head><body>
     <div style="max-height:{max_height}; overflow-y:auto;">
     <table class="clean-table" id="{tid}"><thead><tr>{header}</tr></thead>
