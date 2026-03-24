@@ -130,6 +130,7 @@ st.markdown(f"""
 
     /* ── Mobile responsive ── */
     @media (max-width: 768px) {{
+        .modebar {{ display: none !important; }}
         .main .block-container {{
             padding-top: 0.75rem !important;
             padding-left: 0.5rem !important;
@@ -328,8 +329,7 @@ def html_table(df: pd.DataFrame, raw_df: pd.DataFrame = None,
 
 # Plotly config: hide toolbar on mobile, minimal on desktop
 PLOTLY_CFG = {
-    "displayModeBar": True,
-    "modeBarButtonsToRemove": ["select2d", "lasso2d", "autoScale2d"],
+    "displayModeBar": "hover",
     "toImageButtonOptions": {"format": "png", "scale": 4},
 }
 
