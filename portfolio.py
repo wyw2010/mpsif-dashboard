@@ -554,7 +554,7 @@ FACTOR_ETFS = {
 
 """
 def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
-    """Regress portfolio returns on factor ETF returns (multivariate OLS)."""
+    # Regress portfolio returns on factor ETF returns (multivariate OLS).
     tickers = list(FACTOR_ETFS.values())
     prices = fetch_prices(tickers, start, end)
     if prices.empty:
