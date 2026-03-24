@@ -156,10 +156,10 @@ st.markdown(f"""
         .metric-card {{
             padding: 0.6rem 0.4rem !important;
             border-radius: 8px !important;
-            margin-bottom: 0.4rem !important;
+            margin-bottom: 0.75rem !important;
         }}
         [data-testid="stHorizontalBlock"] {{
-            row-gap: 0.5rem !important;
+            row-gap: 1rem !important;
         }}
         .metric-label {{
             font-size: 0.6rem !important;
