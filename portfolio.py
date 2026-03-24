@@ -415,8 +415,15 @@ def compute_ticker_values(daily_pos, prices):
 
 # ── 5. Return / risk metrics ─────────────────────────────────────────────
 def daily_returns(series: pd.Series) -> pd.Series:
+    """Compute daily returns, filtering out cash inflow/outflow spikes.
+    If the portfolio value jumps more than 200% in a single day (or drops
+    more than 80%), treat it as a capital flow and set that day's return to 0."""
     s = series[series > 0]
-    return s.pct_change().dropna()
+    rets = s.pct_change().dropna()
+    # Cap returns that are clearly cash flows, not market moves
+    rets[rets > 2.0] = 0.0    # >200% daily gain = cash inflow
+    rets[rets < -0.8] = 0.0   # >80% daily drop = cash outflow / liquidation
+    return rets
 
 
 def cum_return(rets: pd.Series) -> pd.Series:
