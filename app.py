@@ -583,31 +583,45 @@ def load_benchmark_returns(subfund_data):
 
 
 def combine_returns(subfund_data: dict) -> pd.Series:
-    """Compute total fund returns by summing all sub-fund portfolio values
-    into one combined value series, then computing daily returns from that.
-    This is the most accurate approach — no weighting approximations."""
+    """AUM-weighted average of sub-fund daily returns.
+    Each fund is weighted by its prior-day Total AUM, but only included
+    from the date it first has return data (avoids cash inflow spikes)."""
     if len(subfund_data) == 1:
         return list(subfund_data.values())[0]["returns"]
 
-    all_totals = {}
+    fund_rets = {}
+    fund_aum = {}
     for name, d in subfund_data.items():
+        r = d["returns"]
         pv = d["portfolio_values"]
-        if len(pv) < 2:
+        if r.empty or len(pv) < 2:
             continue
-        all_totals[name] = pv["Total"]
+        fund_rets[name] = r
+        fund_aum[name] = pv["Total"].clip(lower=0)
 
-    if not all_totals:
+    if not fund_rets:
         return pd.Series(dtype=float)
 
-    combined_value = pd.DataFrame(all_totals).sort_index().ffill().fillna(0).sum(axis=1)
-    combined_value = combined_value[combined_value > 0]
-    if len(combined_value) < 2:
-        return pd.Series(dtype=float)
+    # Build aligned DataFrames
+    ret_df = pd.DataFrame(fund_rets).sort_index()
+    aum_df = pd.DataFrame(fund_aum).sort_index().ffill().reindex(ret_df.index).ffill().fillna(0)
 
-    rets = combined_value.pct_change().dropna()
-    # Filter out cash flow spikes (>50% single-day move = inflow/outflow)
-    rets = rets[rets.abs() < 0.50]
-    return rets
+    # Prior-day AUM weights — use NaN (not 0) for days before a fund has data,
+    # so those funds are excluded from weighting rather than given 0 weight
+    weights = aum_df.shift(1)
+    for name in fund_rets:
+        first_date = fund_rets[name].index[0]
+        weights.loc[weights.index < first_date, name] = np.nan
+
+    row_totals = weights.sum(axis=1, min_count=1)  # NaN if all NaN
+    weights = weights.div(row_totals, axis=0)
+
+    # Weighted return: only include funds that have data (NaN weights → excluded)
+    common = weights.index.intersection(ret_df.index)
+    combined = (ret_df.loc[common].fillna(0) * weights.loc[common].fillna(0)).sum(axis=1)
+    combined = combined.dropna()
+    combined = combined[combined.index >= ret_df.index[0]]
+    return combined
 
 
 @st.cache_data(ttl=900, show_spinner=False)
