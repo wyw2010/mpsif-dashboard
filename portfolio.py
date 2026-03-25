@@ -106,16 +106,24 @@ def parse_fidelity_csv(filepath: str):
         initial_cash = 0
 
     # Orphan sells: SELL transactions for positions we never saw a BUY for.
-    # These are liquidations from the previous iteration of the fund and should
-    # be completely ignored — they don't affect the current PM's portfolio.
-    # Cash from orphan sells before the first buy is already in initial_cash
-    # (via Fidelity's cash balance). Orphan sells after the first buy are skipped
-    # in reconstruct_positions() and NOT added to initial_cash.
+    # These are liquidations from the previous PM and are skipped in
+    # reconstruct_positions(). However, the cash proceeds from orphan sells
+    # that happen AFTER the first buy represent capital that funds the current
+    # PM's trades and must be added to initial_cash.
     bought_syms = set(raw.loc[buy_mask, "Symbol"].str.strip())
     orphan_sell_mask = sell_mask & ~raw["Symbol"].str.strip().isin(bought_syms)
     n_orphan = orphan_sell_mask.sum()
     if n_orphan > 0:
-        log.info(f"  Ignoring {n_orphan} orphan sell transactions (previous PM liquidations)")
+        after_first_buy = orphan_sell_mask & (raw_dates >= first_buy_date)
+        orphan_proceeds = pd.to_numeric(
+            raw.loc[after_first_buy, "Amount ($)"].astype(str).str.replace(",", ""),
+            errors="coerce",
+        ).fillna(0).sum()
+        if orphan_proceeds > 0:
+            initial_cash += orphan_proceeds
+            log.info(f"  Added ${orphan_proceeds:,.2f} orphan sell proceeds to initial_cash ({n_orphan} orphan txns total)")
+        else:
+            log.info(f"  Ignoring {n_orphan} orphan sell transactions (all before first buy)")
 
     # Now build the filtered DataFrame
     df = pd.DataFrame()
