@@ -1014,9 +1014,11 @@ def build_subfund(csv_path: str):
     tickers = sorted({t for p in daily_pos.values() for t in p})
     log.info(f"  {len(daily_pos)} business days, {len(tickers)} unique tickers: {tickers}")
 
+    # Ensure price history goes back to at least 2025-09-01 for full cache coverage
+    price_start = min(first_buy - timedelta(days=5), pd.Timestamp("2025-09-01"))
     prices = fetch_prices(
         tickers,
-        (first_buy - timedelta(days=5)).strftime("%Y-%m-%d"),
+        price_start.strftime("%Y-%m-%d"),
         (end_date + timedelta(days=1)).strftime("%Y-%m-%d"),
     )
 
