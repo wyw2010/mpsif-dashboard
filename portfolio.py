@@ -105,23 +105,17 @@ def parse_fidelity_csv(filepath: str):
     else:
         initial_cash = 0
 
-    # Account for pre-existing positions (orphan sells).
-    # If the CSV starts mid-life, there may be SELL transactions for positions
-    # we never saw a BUY for. Sells that happen BEFORE the first buy are already
-    # reflected in Fidelity's cash balance (and thus in initial_cash). But sells
-    # that happen AFTER the first buy represent equity that existed at the start
-    # and must be added to initial_cash to avoid understating the portfolio value.
+    # Orphan sells: SELL transactions for positions we never saw a BUY for.
+    # These are liquidations from the previous iteration of the fund and should
+    # be completely ignored — they don't affect the current PM's portfolio.
+    # Cash from orphan sells before the first buy is already in initial_cash
+    # (via Fidelity's cash balance). Orphan sells after the first buy are skipped
+    # in reconstruct_positions() and NOT added to initial_cash.
     bought_syms = set(raw.loc[buy_mask, "Symbol"].str.strip())
     orphan_sell_mask = sell_mask & ~raw["Symbol"].str.strip().isin(bought_syms)
-    # Only count orphan sells AFTER the first buy date
-    after_first_buy = orphan_sell_mask & (raw_dates > first_buy_date)
-    orphan_proceeds = pd.to_numeric(
-        raw.loc[after_first_buy, "Amount ($)"].astype(str).str.replace(",", ""),
-        errors="coerce",
-    ).fillna(0).sum()
-    if orphan_proceeds > 0:
-        initial_cash += orphan_proceeds
-        log.info(f"  Added ${orphan_proceeds:,.2f} orphan sell proceeds (after first buy) to initial_cash")
+    n_orphan = orphan_sell_mask.sum()
+    if n_orphan > 0:
+        log.info(f"  Ignoring {n_orphan} orphan sell transactions (previous PM liquidations)")
 
     # Now build the filtered DataFrame
     df = pd.DataFrame()
@@ -343,8 +337,9 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
                 if cache.empty:
                     cache = new_data
                 else:
-                    for col in new_data.columns:
-                        cache[col] = new_data[col]
+                    # Merge new data into cache, expanding the date range if needed
+                    cache = new_data.combine_first(cache)
+                    cache = cache.sort_index()
                 _save_price_cache(cache)
                 log.info(f"  Price cache saved ({len(cache.columns)} tickers, {len(cache)} rows)")
             else:
