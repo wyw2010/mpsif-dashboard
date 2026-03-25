@@ -585,7 +585,6 @@ FACTOR_ETFS = {
     "Momentum": "MTUM",
     "Value": "VLUE",
     "Growth": "VUG",
-    "Profitability": "QUAL",
     "Defensive": "USMV",
 }
 
@@ -630,17 +629,45 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
     X = aligned[factor_names].values.astype(np.float64)
     X = np.column_stack([np.ones(len(X)), X])  # add intercept
 
-    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    coeffs, residuals_ss, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    y_hat = X @ coeffs
+    residuals = y - y_hat
+    n, k = X.shape
 
-    betas = {
-        name.title(): round(float(coeffs[i + 1]), 3)
-        for i, name in enumerate(factor_names)
-    }
+    # R-squared
+    ss_res = float(np.sum(residuals ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    # Standard errors, t-stats, p-values
+    from scipy import stats as sp_stats
+    mse = ss_res / max(n - k, 1)
+    XtX_inv = np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(XtX_inv) * mse)
+    t_stats = coeffs / se
+    p_values = [2 * (1 - sp_stats.t.cdf(abs(t), df=max(n - k, 1))) for t in t_stats]
+
+    betas = {}
+    beta_stats = {}
+    for i, fname in enumerate(factor_names):
+        label = fname.title()
+        betas[label] = round(float(coeffs[i + 1]), 3)
+        beta_stats[label] = {
+            "t_stat": round(float(t_stats[i + 1]), 3),
+            "p_value": round(float(p_values[i + 1]), 3),
+        }
+
     alpha_daily = float(coeffs[0])
-    residuals = y - X @ coeffs
     idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
 
-    result = {"_alpha": round(alpha_daily * 252, 3), "_idio_vol": round(idio_vol, 3)}
+    result = {
+        "_alpha": round(alpha_daily * 252, 3),
+        "_idio_vol": round(idio_vol, 3),
+        "_r_squared": round(r_squared, 3),
+        "_alpha_t": round(float(t_stats[0]), 3),
+        "_alpha_p": round(float(p_values[0]), 3),
+        "_stats": beta_stats,
+    }
     result.update(betas)
 
     log.info(f"Factor betas: {result}")
@@ -679,19 +706,196 @@ def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict
     X = np.column_stack([np.ones(len(X)), X])
 
     coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-    betas = {name: round(float(coeffs[i + 1]), 3) for i, name in enumerate(factor_names)}
+    y_hat = X @ coeffs
+    residuals = y - y_hat
+    n, k = X.shape
+
+    # R-squared
+    ss_res = float(np.sum(residuals ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    # Standard errors, t-stats, p-values
+    from scipy import stats as sp_stats
+    mse = ss_res / max(n - k, 1)
+    XtX_inv = np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(XtX_inv) * mse)
+    t_stats = coeffs / se
+    p_values = [2 * (1 - sp_stats.t.cdf(abs(t), df=max(n - k, 1))) for t in t_stats]
+
+    betas = {}
+    beta_stats = {}
+    for i, fname in enumerate(factor_names):
+        betas[fname] = round(float(coeffs[i + 1]), 3)
+        beta_stats[fname] = {
+            "t_stat": round(float(t_stats[i + 1]), 3),
+            "p_value": round(float(p_values[i + 1]), 3),
+        }
+
     alpha_daily = float(coeffs[0])
-    residuals = y - X @ coeffs
     idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
 
-    result = {"_alpha": round(alpha_daily * 252, 3), "_idio_vol": round(idio_vol, 3)}
+    result = {
+        "_alpha": round(alpha_daily * 252, 3),
+        "_idio_vol": round(idio_vol, 3),
+        "_r_squared": round(r_squared, 3),
+        "_alpha_t": round(float(t_stats[0]), 3),
+        "_alpha_p": round(float(p_values[0]), 3),
+        "_stats": beta_stats,
+    }
     result.update(betas)
 
     log.info(f"ETF factor betas: {result}")
     return result
 
 
-# ── 6. Average cost basis ─────────────────────────────────────────────────
+# ── 6. Sector mapping ─────────────────────────────────────────────────────
+_SECTOR_CACHE_PATH = Path(os.getenv("DATA_DIR", "data")) / "sector_cache.json"
+
+
+def _load_sector_cache() -> dict:
+    try:
+        if _SECTOR_CACHE_PATH.exists():
+            import json
+            return json.loads(_SECTOR_CACHE_PATH.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _save_sector_cache(cache: dict):
+    import json
+    _SECTOR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _SECTOR_CACHE_PATH.write_text(json.dumps(cache))
+
+
+def get_sectors(tickers: list) -> dict:
+    """Return {ticker: sector} mapping. Uses Alpaca assets API + local cache."""
+    cache = _load_sector_cache()
+    result = {}
+    missing = []
+    for t in tickers:
+        if t in cache and cache[t] != "Other":
+            result[t] = cache[t]
+        else:
+            missing.append(t)
+
+    if missing:
+        headers = {
+            "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY", ""),
+            "APCA-API-SECRET-KEY": os.getenv("ALPACA_SECRET_KEY", ""),
+        }
+        # Alpaca paper trading API has asset info
+        for t in missing:
+            try:
+                resp = _requests.get(
+                    f"https://paper-api.alpaca.markets/v2/assets/{t}",
+                    headers=headers, timeout=5,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Alpaca provides 'attributes' but not sector directly
+                    # Use a heuristic based on common ETF/stock mappings
+                    result[t] = "Other"
+                    cache[t] = "Other"
+            except Exception:
+                result[t] = "Other"
+                cache[t] = "Other"
+
+        # Fallback: well-known sector mapping for common US stocks
+        # This covers most S&P 500 and popular tickers
+        _KNOWN_SECTORS = {
+            # Technology
+            "AAPL": "Technology", "MSFT": "Technology", "GOOG": "Technology", "GOOGL": "Technology",
+            "META": "Technology", "NVDA": "Technology", "AMD": "Technology", "INTC": "Technology",
+            "AVGO": "Technology", "ORCL": "Technology", "CRM": "Technology", "ADBE": "Technology",
+            "CSCO": "Technology", "TXN": "Technology", "QCOM": "Technology", "AMAT": "Technology",
+            "MU": "Technology", "LRCX": "Technology", "KLAC": "Technology", "SNPS": "Technology",
+            "NOW": "Technology", "PLTR": "Technology", "COIN": "Technology", "MELI": "Technology",
+            "SNOW": "Technology", "MDB": "Technology", "TEAM": "Technology", "NET": "Technology",
+            "CRWD": "Technology", "FTNT": "Technology", "PANW": "Technology", "ZS": "Technology",
+            "FSLR": "Technology", "STX": "Technology", "WDC": "Technology", "GEV": "Technology",
+            "GLW": "Technology", "TEL": "Technology", "APH": "Technology", "TER": "Technology",
+            "COHR": "Technology", "AAOI": "Technology", "ACMR": "Technology", "LITE": "Technology",
+            "ANET": "Technology", "FISV": "Technology", "FI": "Technology",
+            # Healthcare
+            "UNH": "Healthcare", "JNJ": "Healthcare", "LLY": "Healthcare", "PFE": "Healthcare",
+            "ABBV": "Healthcare", "MRK": "Healthcare", "TMO": "Healthcare", "ABT": "Healthcare",
+            "AMGN": "Healthcare", "GILD": "Healthcare", "REGN": "Healthcare", "VRTX": "Healthcare",
+            "ISRG": "Healthcare", "HCA": "Healthcare", "MCK": "Healthcare", "INCY": "Healthcare",
+            "PODD": "Healthcare", "MEDP": "Healthcare", "DCTH": "Healthcare", "GRCE": "Healthcare",
+            # Financials
+            "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "GS": "Financials",
+            "MS": "Financials", "C": "Financials", "BLK": "Financials", "SCHW": "Financials",
+            "AXP": "Financials", "COF": "Financials", "USB": "Financials", "TFC": "Financials",
+            "PNC": "Financials", "CFG": "Financials", "KEY": "Financials", "RF": "Financials",
+            "STT": "Financials", "IVZ": "Financials", "SYF": "Financials", "PFG": "Financials",
+            "ALL": "Financials", "AIG": "Financials", "PRU": "Financials", "AFL": "Financials",
+            "CINF": "Financials", "BX": "Financials", "KKR": "Financials", "MCO": "Financials",
+            # Consumer Discretionary
+            "AMZN": "Consumer Discretionary", "TSLA": "Consumer Discretionary", "HD": "Consumer Discretionary",
+            "NKE": "Consumer Discretionary", "SBUX": "Consumer Discretionary", "TJX": "Consumer Discretionary",
+            "LULU": "Consumer Discretionary", "ONON": "Consumer Discretionary", "GM": "Consumer Discretionary",
+            "F": "Consumer Discretionary", "UBER": "Consumer Discretionary", "EXPE": "Consumer Discretionary",
+            "CPNG": "Consumer Discretionary", "DKNG": "Consumer Discretionary", "DG": "Consumer Discretionary",
+            "DLTR": "Consumer Discretionary", "CHTR": "Consumer Discretionary", "SN": "Consumer Discretionary",
+            "BROS": "Consumer Discretionary", "TPR": "Consumer Discretionary", "HAS": "Consumer Discretionary",
+            "TTWO": "Consumer Discretionary", "SPOT": "Consumer Discretionary", "RDDT": "Consumer Discretionary",
+            "DUOL": "Consumer Discretionary", "LYV": "Consumer Discretionary", "SRAD": "Consumer Discretionary",
+            "FLUT": "Consumer Discretionary",
+            # Industrials
+            "CAT": "Industrials", "HON": "Industrials", "UPS": "Industrials", "RTX": "Industrials",
+            "DE": "Industrials", "BA": "Industrials", "LMT": "Industrials", "GE": "Industrials",
+            "OMC": "Industrials", "HII": "Industrials", "SOLV": "Industrials", "VTRS": "Industrials",
+            "ECL": "Industrials", "PNR": "Industrials", "BMI": "Industrials", "MWA": "Industrials",
+            "WTS": "Industrials", "VVX": "Industrials", "FANG": "Industrials",
+            # Energy
+            "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "SLB": "Energy",
+            "EOG": "Energy", "PXD": "Energy", "VLO": "Energy", "MPC": "Energy",
+            "PSX": "Energy", "EQT": "Energy", "APA": "Energy", "BG": "Energy",
+            "MOS": "Energy", "ALB": "Energy", "NEM": "Energy", "AMCR": "Energy",
+            "CEG": "Energy", "APLD": "Energy",
+            # Communication Services
+            "DIS": "Communication", "NFLX": "Communication", "CMCSA": "Communication",
+            "T": "Communication", "VZ": "Communication", "TMUS": "Communication",
+            "WBD": "Communication",
+            # Consumer Staples
+            "PG": "Consumer Staples", "KO": "Consumer Staples", "PEP": "Consumer Staples",
+            "WMT": "Consumer Staples", "COST": "Consumer Staples",
+            # Utilities
+            "NEE": "Utilities", "DUK": "Utilities", "SO": "Utilities",
+            "EIX": "Utilities", "ES": "Utilities", "SPG": "Real Estate",
+            # Real Estate
+            "AMT": "Real Estate", "PLD": "Real Estate", "CCI": "Real Estate",
+            # ETFs
+            "SPY": "ETF", "IWV": "ETF", "AGG": "ETF", "MTUM": "ETF",
+            "VLUE": "ETF", "VUG": "ETF", "USMV": "ETF", "SPYG": "ETF",
+            "SPHQ": "ETF", "VTHR": "ETF", "JPXN": "ETF",
+            # Others from portfolios
+            "LOGI": "Technology", "GRMN": "Technology", "AS": "Consumer Discretionary",
+            "PBR": "Energy", "SDRL": "Energy", "ACN": "Technology",
+            "MMYT": "Consumer Discretionary", "PCOR": "Technology", "NCNO": "Technology",
+            "HYNE": "Financials", "GTX": "Industrials", "SERV": "Technology",
+            "SNAP": "Communication", "STUB": "Consumer Discretionary", "TPC": "Industrials",
+            "ACIC": "Financials", "RUSHA": "Industrials", "RKLB": "Industrials",
+            "AIR": "Industrials", "PSYTF": "Energy", "GRBK": "Consumer Discretionary",
+            "AXON": "Technology", "CCC": "Technology", "CYH": "Healthcare",
+            "LQDA": "Healthcare", "KRMN": "Industrials", "AVTX": "Healthcare",
+            "ATRO": "Industrials", "ATI": "Industrials", "POET": "Technology",
+            "VLTO": "Industrials", "DRVN": "Consumer Discretionary",
+        }
+        for t in missing:
+            if t in _KNOWN_SECTORS:
+                result[t] = _KNOWN_SECTORS[t]
+                cache[t] = _KNOWN_SECTORS[t]
+
+        _save_sector_cache(cache)
+        log.info(f"Sector lookup: {len(result)} resolved, {sum(1 for v in result.values() if v == 'Other')} unknown")
+
+    return result
+
+
+# ── 7. Average cost basis ─────────────────────────────────────────────────
 def compute_avg_costs(txns: pd.DataFrame) -> dict:
     """Compute VWAP cost basis per ticker from buy transactions."""
     costs = {}

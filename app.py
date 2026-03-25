@@ -768,6 +768,35 @@ with tabs[0]:
                 })
             components.html(html_table(pd.DataFrame(summary_rows), default_sort="Sub-Fund"), height=min(400, 45 * len(summary_rows) + 50), scrolling=True)
 
+            # ── Correlation Matrix ──
+            if len(subfund_data) >= 2:
+                st.markdown('<div class="section-header">Sub-Fund Correlation Matrix</div>', unsafe_allow_html=True)
+                corr_rets = {}
+                for sname, sd in subfund_data.items():
+                    corr_rets[sname] = sd["returns"]
+                corr_df = pd.DataFrame(corr_rets).dropna()
+                if len(corr_df) >= 5:
+                    corr_matrix = corr_df.corr()
+                    # Heatmap
+                    fig_corr = go.Figure(go.Heatmap(
+                        z=corr_matrix.values,
+                        x=corr_matrix.columns.tolist(),
+                        y=corr_matrix.index.tolist(),
+                        colorscale=[[0, "#DC2626"], [0.5, WHITE], [1, NYU_PURPLE]],
+                        zmin=-1, zmax=1,
+                        text=[[f"{v:.3f}" for v in row] for row in corr_matrix.values],
+                        texttemplate="%{text}",
+                        textfont=dict(size=14),
+                        hovertemplate="%{x} vs %{y}: %{z:.3f}<extra></extra>",
+                    ))
+                    fig_corr.update_layout(
+                        height=300, margin=dict(l=0, r=0, t=10, b=0),
+                        paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+                        font=dict(family="'Helvetica Neue', Helvetica, Arial, sans-serif", weight=300),
+                        xaxis=dict(side="bottom"),
+                    )
+                    st.plotly_chart(fig_corr, use_container_width=True, config=PLOTLY_CFG)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  SUB-FUND TABS
@@ -899,38 +928,90 @@ for idx, name in enumerate(pf.SUBFUNDS):
         else:
             st.info("No current holdings.")
 
+        # ── Sector Exposure ──
+        if not holdings.empty:
+            st.markdown('<div class="section-header">Sector Exposure</div>', unsafe_allow_html=True)
+            sectors = pf.get_sectors(holdings["Ticker"].tolist())
+            sector_df = holdings.copy()
+            sector_df["Sector"] = sector_df["Ticker"].map(sectors).fillna("Other")
+            sector_agg = sector_df.groupby("Sector")["Weight (%)"].sum().reset_index()
+            sector_agg = sector_agg.sort_values("Weight (%)", ascending=False)
+
+            SECTOR_COLORS = {
+                "Technology": "#2563EB", "Healthcare": "#059669",
+                "Financial Services": "#D97706", "Consumer Cyclical": "#DC2626",
+                "Industrials": "#7C3AED", "Energy": "#0EA5E9",
+                "Communication Services": "#EC4899", "Consumer Defensive": "#10B981",
+                "Basic Materials": "#F59E0B", "Real Estate": "#6366F1",
+                "Utilities": "#14B8A6", "Other": "#94A3B8",
+            }
+            sec_colors = [SECTOR_COLORS.get(s, "#94A3B8") for s in sector_agg["Sector"]]
+
+            scol1, scol2 = st.columns([1, 1])
+            with scol1:
+                fig_sec = go.Figure(go.Pie(
+                    labels=sector_agg["Sector"], values=sector_agg["Weight (%)"], hole=0.45,
+                    textinfo="label+percent", textfont_size=11,
+                    marker=dict(colors=sec_colors),
+                    hovertemplate="%{label}<br>Weight: %{value:.3f}%<extra></extra>",
+                ))
+                fig_sec.update_layout(
+                    height=350, margin=dict(l=0, r=0, t=10, b=0),
+                    paper_bgcolor=WHITE, font=dict(family="'Helvetica Neue', Helvetica, Arial, sans-serif", weight=300),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_sec, use_container_width=True, config=PLOTLY_CFG)
+            with scol2:
+                sec_display = sector_agg.copy()
+                sec_display["Weight (%)"] = sec_display["Weight (%)"].apply(lambda x: f"{x:.3f}%")
+                # Count holdings per sector
+                sec_counts = sector_df.groupby("Sector")["Ticker"].count().reset_index()
+                sec_counts.columns = ["Sector", "# Holdings"]
+                sec_display = sec_display.merge(sec_counts, on="Sector")
+                components.html(html_table(sec_display, max_height="350px"), height=min(400, 40 * len(sec_display) + 55), scrolling=True)
+
         # ── Factor Exposure ──
         if not rets.empty:
             start_str = (d["first_date"] - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
             end_str = (d["end_date"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
-            st.markdown('<div class="section-header">Factor Exposure (Fama-French)</div>', unsafe_allow_html=True)
-            factor_betas = pf.compute_factor_betas(rets, start_str, end_str)
-            if factor_betas:
-                ff_alpha = factor_betas.pop("_alpha", 0.0)
-                ff_idio = factor_betas.pop("_idio_vol", 0.0)
-                fcols = st.columns(len(factor_betas) + 2)
-                with fcols[0]:
-                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(ff_alpha * 100), color_class(ff_alpha)), unsafe_allow_html=True)
-                for i, (factor_name, beta_val) in enumerate(factor_betas.items()):
-                    with fcols[i + 1]:
-                        st.markdown(metric_card(factor_name, f"{beta_val:.3f}", color_class(beta_val)), unsafe_allow_html=True)
-                with fcols[-1]:
-                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(ff_idio * 100)), unsafe_allow_html=True)
+            def render_factor_table(result: dict, title: str, key_suffix: str):
+                """Render factor exposure as metric cards + stats table."""
+                if not result:
+                    return
+                st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
+                alpha = result.pop("_alpha", 0.0)
+                idio = result.pop("_idio_vol", 0.0)
+                r_sq = result.pop("_r_squared", 0.0)
+                alpha_t = result.pop("_alpha_t", 0.0)
+                alpha_p = result.pop("_alpha_p", 0.0)
+                stats = result.pop("_stats", {})
 
-            st.markdown('<div class="section-header">Factor Exposure (ETF Proxies)</div>', unsafe_allow_html=True)
-            etf_betas = pf.compute_etf_factor_betas(rets, start_str, end_str)
-            if etf_betas:
-                etf_alpha = etf_betas.pop("_alpha", 0.0)
-                etf_idio = etf_betas.pop("_idio_vol", 0.0)
-                ecols = st.columns(len(etf_betas) + 2)
-                with ecols[0]:
-                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(etf_alpha * 100), color_class(etf_alpha)), unsafe_allow_html=True)
-                for i, (factor_name, beta_val) in enumerate(etf_betas.items()):
-                    with ecols[i + 1]:
-                        st.markdown(metric_card(factor_name, f"{beta_val:.3f}", color_class(beta_val)), unsafe_allow_html=True)
-                with ecols[-1]:
-                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(etf_idio * 100)), unsafe_allow_html=True)
+                # Factor beta cards
+                factor_items = {k: v for k, v in result.items() if not k.startswith("_")}
+                fcols = st.columns(len(factor_items) + 2)
+                with fcols[0]:
+                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(alpha * 100), color_class(alpha)), unsafe_allow_html=True)
+                for i, (fname, bval) in enumerate(factor_items.items()):
+                    with fcols[i + 1]:
+                        st.markdown(metric_card(fname, f"{bval:.3f}", color_class(bval)), unsafe_allow_html=True)
+                with fcols[-1]:
+                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(idio * 100)), unsafe_allow_html=True)
+
+                # Stats summary table
+                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}", "Sig.": "***" if alpha_p < 0.01 else "**" if alpha_p < 0.05 else "*" if alpha_p < 0.1 else ""}]
+                for fname, bval in factor_items.items():
+                    s = stats.get(fname, {})
+                    t = s.get("t_stat", 0.0)
+                    p = s.get("p_value", 1.0)
+                    sig = "***" if p < 0.01 else "**" if p < 0.05 else "*" if p < 0.1 else ""
+                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}", "Sig.": sig})
+                stat_df = pd.DataFrame(stat_rows)
+                st.caption(f"R² = {r_sq:.3f} · Significance: *** p<0.01, ** p<0.05, * p<0.10")
+                components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
+
+            render_factor_table(pf.compute_factor_betas(rets, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
+            render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
 
         # ── Individual Stock Factor Exposure ──
         if not holdings.empty and not rets.empty:
