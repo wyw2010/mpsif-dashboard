@@ -981,7 +981,7 @@ if _logo_path.exists():
     <div style="text-align:center; padding: 1.5rem 0 2rem 0;">
         <img src="data:image/png;base64,{_logo_b64}" alt="NYU Stern" style="height:45px; margin-bottom:0.5rem;" />
         <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-weight:300; font-size:0.75rem; color:#6B7280;">
-            &copy; 2026 NYU Michael Price Student Investment Fund | Will Wu (willwu@stern.nyu.edu)
+            &copy; 2026 NYU Michael Price Student Investment Fund | Contact willwu@stern.nyu.edu for technical help
         </div>
     </div>
     """, unsafe_allow_html=True)
