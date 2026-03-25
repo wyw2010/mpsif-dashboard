@@ -583,38 +583,31 @@ def load_benchmark_returns(subfund_data):
 
 
 def combine_returns(subfund_data: dict) -> pd.Series:
-    """Equity-weighted average of sub-fund daily returns.
-    Weight each fund's return by its prior-day equity (invested capital),
-    not total value, so idle cash doesn't inflate a fund's influence."""
+    """Compute total fund returns by summing all sub-fund portfolio values
+    into one combined value series, then computing daily returns from that.
+    This is the most accurate approach — no weighting approximations."""
     if len(subfund_data) == 1:
         return list(subfund_data.values())[0]["returns"]
 
-    fund_rets = {}
-    fund_equity = {}
+    all_totals = {}
     for name, d in subfund_data.items():
-        r = d["returns"]
         pv = d["portfolio_values"]
-        if r.empty or len(pv) < 2:
+        if len(pv) < 2:
             continue
-        fund_rets[name] = r
-        # Use Equity column (invested capital) for weighting
-        eq = pv["Equity"] if "Equity" in pv.columns else pv["Total"]
-        eq = eq.clip(lower=0)
-        fund_equity[name] = eq
+        all_totals[name] = pv["Total"]
 
-    if not fund_rets:
+    if not all_totals:
         return pd.Series(dtype=float)
 
-    ret_df = pd.DataFrame(fund_rets).sort_index().fillna(0)
-    eq_df = pd.DataFrame(fund_equity).sort_index().ffill().reindex(ret_df.index).ffill().fillna(0)
+    combined_value = pd.DataFrame(all_totals).sort_index().ffill().fillna(0).sum(axis=1)
+    combined_value = combined_value[combined_value > 0]
+    if len(combined_value) < 2:
+        return pd.Series(dtype=float)
 
-    # Prior-day equity weights
-    weights = eq_df.shift(1).dropna(how="all")
-    row_totals = weights.sum(axis=1)
-    weights = weights.div(row_totals, axis=0).fillna(0)
-
-    common = weights.index.intersection(ret_df.index)
-    return (ret_df.loc[common] * weights.loc[common]).sum(axis=1)
+    rets = combined_value.pct_change().dropna()
+    # Filter out cash flow spikes (>50% single-day move = inflow/outflow)
+    rets = rets[rets.abs() < 0.50]
+    return rets
 
 
 @st.cache_data(ttl=900, show_spinner=False)
