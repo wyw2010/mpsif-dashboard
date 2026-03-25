@@ -626,10 +626,16 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
 
     coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
 
-    result = {
+    betas = {
         name.title(): round(float(coeffs[i + 1]), 3)
         for i, name in enumerate(factor_names)
     }
+    alpha_daily = float(coeffs[0])
+    residuals = y - X @ coeffs
+    idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
+
+    result = {"_alpha": round(alpha_daily * 252, 3), "_idio_vol": round(idio_vol, 3)}
+    result.update(betas)
 
     log.info(f"Factor betas: {result}")
     return result
@@ -667,7 +673,14 @@ def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict
     X = np.column_stack([np.ones(len(X)), X])
 
     coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-    result = {name: round(float(coeffs[i + 1]), 3) for i, name in enumerate(factor_names)}
+    betas = {name: round(float(coeffs[i + 1]), 3) for i, name in enumerate(factor_names)}
+    alpha_daily = float(coeffs[0])
+    residuals = y - X @ coeffs
+    idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
+
+    result = {"_alpha": round(alpha_daily * 252, 3), "_idio_vol": round(idio_vol, 3)}
+    result.update(betas)
+
     log.info(f"ETF factor betas: {result}")
     return result
 

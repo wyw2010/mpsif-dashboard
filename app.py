@@ -885,18 +885,30 @@ for idx, name in enumerate(pf.SUBFUNDS):
             st.markdown('<div class="section-header">Factor Exposure (Fama-French)</div>', unsafe_allow_html=True)
             factor_betas = pf.compute_factor_betas(rets, start_str, end_str)
             if factor_betas:
-                fcols = st.columns(len(factor_betas))
+                ff_alpha = factor_betas.pop("_alpha", 0.0)
+                ff_idio = factor_betas.pop("_idio_vol", 0.0)
+                fcols = st.columns(len(factor_betas) + 2)
+                with fcols[0]:
+                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(ff_alpha * 100), color_class(ff_alpha)), unsafe_allow_html=True)
                 for i, (factor_name, beta_val) in enumerate(factor_betas.items()):
-                    with fcols[i]:
+                    with fcols[i + 1]:
                         st.markdown(metric_card(factor_name, f"{beta_val:.3f}", color_class(beta_val)), unsafe_allow_html=True)
+                with fcols[-1]:
+                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(ff_idio * 100)), unsafe_allow_html=True)
 
             st.markdown('<div class="section-header">Factor Exposure (ETF Proxies)</div>', unsafe_allow_html=True)
             etf_betas = pf.compute_etf_factor_betas(rets, start_str, end_str)
             if etf_betas:
-                ecols = st.columns(len(etf_betas))
+                etf_alpha = etf_betas.pop("_alpha", 0.0)
+                etf_idio = etf_betas.pop("_idio_vol", 0.0)
+                ecols = st.columns(len(etf_betas) + 2)
+                with ecols[0]:
+                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(etf_alpha * 100), color_class(etf_alpha)), unsafe_allow_html=True)
                 for i, (factor_name, beta_val) in enumerate(etf_betas.items()):
-                    with ecols[i]:
+                    with ecols[i + 1]:
                         st.markdown(metric_card(factor_name, f"{beta_val:.3f}", color_class(beta_val)), unsafe_allow_html=True)
+                with ecols[-1]:
+                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(etf_idio * 100)), unsafe_allow_html=True)
 
         # ── Dividends ──
         if dividends:
