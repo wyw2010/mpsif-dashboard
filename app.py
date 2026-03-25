@@ -932,6 +932,70 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 with ecols[-1]:
                     st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(etf_idio * 100)), unsafe_allow_html=True)
 
+        # ── Individual Stock Factor Exposure ──
+        if not holdings.empty and not rets.empty:
+            st.markdown('<div class="section-header">Stock Factor Explorer</div>', unsafe_allow_html=True)
+            available_tickers = sorted(holdings["Ticker"].tolist())
+            selected_stocks = st.multiselect(
+                "Select stocks to analyze",
+                available_tickers,
+                default=available_tickers[:3] if len(available_tickers) >= 3 else available_tickers,
+                key=f"stock_factor_{name}",
+            )
+            if selected_stocks:
+                stock_prices = pf.fetch_prices(selected_stocks, start_str, end_str)
+                if not stock_prices.empty:
+                    stock_factor_rows = []
+                    for ticker in selected_stocks:
+                        if ticker not in stock_prices.columns:
+                            continue
+                        stock_rets = stock_prices[ticker].pct_change().dropna()
+                        if len(stock_rets) < 10:
+                            continue
+                        # Fama-French betas
+                        ff = pf.compute_factor_betas(stock_rets, start_str, end_str)
+                        # ETF betas
+                        etf = pf.compute_etf_factor_betas(stock_rets, start_str, end_str)
+                        if ff or etf:
+                            row = {"Ticker": ticker}
+                            # FF factors
+                            ff_alpha = ff.pop("_alpha", 0.0) if ff else 0.0
+                            ff_idio = ff.pop("_idio_vol", 0.0) if ff else 0.0
+                            for k, v in (ff or {}).items():
+                                row[f"FF: {k}"] = v
+                            row["FF: Alpha (Ann.)"] = round(ff_alpha * 100, 3)
+                            row["FF: Idio. Vol"] = round(ff_idio * 100, 3)
+                            # ETF factors
+                            etf_alpha = etf.pop("_alpha", 0.0) if etf else 0.0
+                            etf_idio = etf.pop("_idio_vol", 0.0) if etf else 0.0
+                            for k, v in (etf or {}).items():
+                                row[f"ETF: {k}"] = v
+                            row["ETF: Alpha (Ann.)"] = round(etf_alpha * 100, 3)
+                            row["ETF: Idio. Vol"] = round(etf_idio * 100, 3)
+                            stock_factor_rows.append(row)
+
+                    if stock_factor_rows:
+                        sf_df = pd.DataFrame(stock_factor_rows)
+                        # Split into FF and ETF tables
+                        ff_cols = ["Ticker"] + [c for c in sf_df.columns if c.startswith("FF:")]
+                        etf_cols = ["Ticker"] + [c for c in sf_df.columns if c.startswith("ETF:")]
+
+                        # Clean column names for display
+                        ff_display = sf_df[ff_cols].copy()
+                        ff_display.columns = [c.replace("FF: ", "") for c in ff_display.columns]
+                        etf_display = sf_df[etf_cols].copy()
+                        etf_display.columns = [c.replace("ETF: ", "") for c in etf_display.columns]
+
+                        st.markdown("**Fama-French Factors**")
+                        components.html(html_table(ff_display, max_height="300px"), height=min(350, 40 * len(ff_display) + 55), scrolling=True)
+                        st.markdown("")
+                        st.markdown("**ETF Proxy Factors**")
+                        components.html(html_table(etf_display, max_height="300px"), height=min(350, 40 * len(etf_display) + 55), scrolling=True)
+                    else:
+                        st.info("Not enough data to compute factor betas for selected stocks.")
+                else:
+                    st.info("Could not fetch price data for selected stocks.")
+
         # ── Dividends ──
         if dividends:
             st.markdown('<div class="section-header">Dividend & Fee History</div>', unsafe_allow_html=True)
