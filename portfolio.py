@@ -70,12 +70,18 @@ def parse_fidelity_csv(filepath: str):
     computed from the raw CSV (including SPAXX rows) before any filtering.
     """
     log.info(f"Parsing CSV: {filepath}")
-    raw = pd.read_csv(filepath, skiprows=2)
+    # Try to detect header row — Fidelity CSVs have 2 lines of account info before
+    # the header, but re-exported files (e.g., from Google Sheets) may not.
+    peek = pd.read_csv(filepath, nrows=0)
+    if "Run Date" in peek.columns:
+        raw = pd.read_csv(filepath)
+    else:
+        raw = pd.read_csv(filepath, skiprows=2)
     raw = raw.dropna(subset=["Run Date"])
-    raw = raw[raw["Run Date"].str.match(r"\d{2}/\d{2}/\d{4}", na=False)]
+    raw = raw[raw["Run Date"].str.match(r"\d{1,2}/\d{1,2}/\d{4}", na=False)]
 
     # Compute initial cash from UNFILTERED data
-    raw_dates = pd.to_datetime(raw["Run Date"], format="%m/%d/%Y")
+    raw_dates = pd.to_datetime(raw["Run Date"], format="mixed")
     raw_actions = raw["Action"].str.upper()
     raw_cb = pd.to_numeric(
         raw["Cash Balance ($)"].astype(str).str.replace(",", ""), errors="coerce"
