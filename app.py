@@ -987,27 +987,27 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 alpha_p = result.pop("_alpha_p", 0.0)
                 stats = result.pop("_stats", {})
 
-                # Factor beta cards
+                # Factor beta cards + R²
                 factor_items = {k: v for k, v in result.items() if not k.startswith("_")}
-                fcols = st.columns(len(factor_items) + 2)
+                fcols = st.columns(len(factor_items) + 3)
                 with fcols[0]:
+                    st.markdown(metric_card("R²", f"{r_sq:.3f}"), unsafe_allow_html=True)
+                with fcols[1]:
                     st.markdown(metric_card("Alpha (Ann.)", fmt_pct(alpha * 100), color_class(alpha)), unsafe_allow_html=True)
                 for i, (fname, bval) in enumerate(factor_items.items()):
-                    with fcols[i + 1]:
+                    with fcols[i + 2]:
                         st.markdown(metric_card(fname, f"{bval:.3f}", color_class(bval)), unsafe_allow_html=True)
                 with fcols[-1]:
                     st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(idio * 100)), unsafe_allow_html=True)
 
-                # Stats summary table
-                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}", "Sig.": "***" if alpha_p < 0.01 else "**" if alpha_p < 0.05 else "*" if alpha_p < 0.1 else ""}]
+                # Stats table (no Sig. column)
+                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
                 for fname, bval in factor_items.items():
                     s = stats.get(fname, {})
                     t = s.get("t_stat", 0.0)
                     p = s.get("p_value", 1.0)
-                    sig = "***" if p < 0.01 else "**" if p < 0.05 else "*" if p < 0.1 else ""
-                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}", "Sig.": sig})
+                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
                 stat_df = pd.DataFrame(stat_rows)
-                st.caption(f"R² = {r_sq:.3f} · Significance: *** p<0.01, ** p<0.05, * p<0.10")
                 components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
 
             render_factor_table(pf.compute_factor_betas(rets, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
@@ -1026,53 +1026,54 @@ for idx, name in enumerate(pf.SUBFUNDS):
             if selected_stocks:
                 stock_prices = pf.fetch_prices(selected_stocks, start_str, end_str)
                 if not stock_prices.empty:
-                    stock_factor_rows = []
+                    has_results = False
                     for ticker in selected_stocks:
                         if ticker not in stock_prices.columns:
                             continue
                         stock_rets = stock_prices[ticker].pct_change().dropna()
                         if len(stock_rets) < 10:
                             continue
-                        # Fama-French betas
                         ff = pf.compute_factor_betas(stock_rets, start_str, end_str)
-                        # ETF betas
                         etf = pf.compute_etf_factor_betas(stock_rets, start_str, end_str)
-                        if ff or etf:
-                            row = {"Ticker": ticker}
-                            # FF factors
-                            ff_alpha = ff.pop("_alpha", 0.0) if ff else 0.0
-                            ff_idio = ff.pop("_idio_vol", 0.0) if ff else 0.0
-                            for k, v in (ff or {}).items():
-                                row[f"FF: {k}"] = v
-                            row["FF: Alpha (Ann.)"] = round(ff_alpha * 100, 3)
-                            row["FF: Idio. Vol"] = round(ff_idio * 100, 3)
-                            # ETF factors
-                            etf_alpha = etf.pop("_alpha", 0.0) if etf else 0.0
-                            etf_idio = etf.pop("_idio_vol", 0.0) if etf else 0.0
-                            for k, v in (etf or {}).items():
-                                row[f"ETF: {k}"] = v
-                            row["ETF: Alpha (Ann.)"] = round(etf_alpha * 100, 3)
-                            row["ETF: Idio. Vol"] = round(etf_idio * 100, 3)
-                            stock_factor_rows.append(row)
+                        if not ff and not etf:
+                            continue
+                        has_results = True
 
-                    if stock_factor_rows:
-                        sf_df = pd.DataFrame(stock_factor_rows)
-                        # Split into FF and ETF tables
-                        ff_cols = ["Ticker"] + [c for c in sf_df.columns if c.startswith("FF:")]
-                        etf_cols = ["Ticker"] + [c for c in sf_df.columns if c.startswith("ETF:")]
+                        # Build per-stock table with FF and ETF rows
+                        def _extract_rows(result, model_label):
+                            if not result:
+                                return []
+                            alpha = result.pop("_alpha", 0.0)
+                            idio = result.pop("_idio_vol", 0.0)
+                            r_sq = result.pop("_r_squared", 0.0)
+                            alpha_t = result.pop("_alpha_t", 0.0)
+                            alpha_p = result.pop("_alpha_p", 0.0)
+                            stats = result.pop("_stats", {})
+                            factors = {k: v for k, v in result.items() if not k.startswith("_")}
+                            rows = []
+                            for fname, bval in factors.items():
+                                s = stats.get(fname, {})
+                                rows.append({
+                                    "Model": model_label,
+                                    "Factor": fname,
+                                    "Beta": f"{bval:.3f}",
+                                    "t-stat": f"{s.get('t_stat', 0.0):.3f}",
+                                    "p-value": f"{s.get('p_value', 1.0):.3f}",
+                                })
+                            rows.append({"Model": model_label, "Factor": "Alpha (Ann.)", "Beta": fmt_pct(alpha * 100), "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"})
+                            rows.append({"Model": model_label, "Factor": "R²", "Beta": f"{r_sq:.3f}", "t-stat": "", "p-value": ""})
+                            rows.append({"Model": model_label, "Factor": "Idio. Vol (Ann.)", "Beta": fmt_pct(idio * 100), "t-stat": "", "p-value": ""})
+                            return rows
 
-                        # Clean column names for display
-                        ff_display = sf_df[ff_cols].copy()
-                        ff_display.columns = [c.replace("FF: ", "") for c in ff_display.columns]
-                        etf_display = sf_df[etf_cols].copy()
-                        etf_display.columns = [c.replace("ETF: ", "") for c in etf_display.columns]
+                        rows = _extract_rows(ff, "Fama-French") + _extract_rows(etf, "ETF Proxy")
+                        if rows:
+                            stock_df = pd.DataFrame(rows)
+                            st.markdown(f"**{ticker}**")
+                            components.html(html_table(stock_df, max_height="350px"),
+                                          height=min(380, 35 * len(stock_df) + 55), scrolling=True)
+                            st.markdown("")
 
-                        st.markdown("**Fama-French Factors**")
-                        components.html(html_table(ff_display, max_height="300px"), height=min(350, 40 * len(ff_display) + 55), scrolling=True)
-                        st.markdown("")
-                        st.markdown("**ETF Proxy Factors**")
-                        components.html(html_table(etf_display, max_height="300px"), height=min(350, 40 * len(etf_display) + 55), scrolling=True)
-                    else:
+                    if not has_results:
                         st.info("Not enough data to compute factor betas for selected stocks.")
                 else:
                     st.info("Could not fetch price data for selected stocks.")
