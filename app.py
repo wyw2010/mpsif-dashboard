@@ -1023,7 +1023,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
             etf_betas = pf.compute_etf_factor_betas(rets, start_str, end_str)
             weekly_attr = pf.weekly_factor_attribution(rets, etf_betas, start_str, end_str)
             if not weekly_attr.empty:
-                st.caption("Factor contributions (%) = β × weekly factor ETF return. Residual = unexplained by factors.")
+                st.caption("Factor contributions (%) = β × weekly factor return. Residual = unexplained by factors.")
                 # Format all numeric columns to 3dp with % suffix
                 display_wa = weekly_attr.copy()
                 for col in display_wa.columns:
