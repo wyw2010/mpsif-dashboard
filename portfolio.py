@@ -867,10 +867,9 @@ def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict
     log.info(f"ETF factor betas: {result}")
     return result
 
-
+"""
 def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end: str) -> pd.DataFrame:
-    """Decompose weekly portfolio returns into factor contributions.
-    Uses ETF factor betas × weekly ETF factor returns."""
+    # Decompose weekly portfolio returns into factor contributions. Uses ETF factor betas × weekly ETF factor returns.
     if port_rets.empty or not betas:
         return pd.DataFrame()
 
@@ -942,7 +941,59 @@ def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end
     # Most recent week first
     df = df.iloc[::-1].reset_index(drop=True)
     return df
+"""
 
+# VERSION THAT USES CONSTRUCTED FACTORS 
+def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end: str) -> pd.DataFrame:
+    # Daily factor returns from pickle
+    factor_daily = pd.read_pickle('data.pk')
+    factor_daily.index = pd.to_datetime(factor_daily.index).normalize()
+
+    # Clean portfolio returns
+    port_clean = port_rets.copy()
+    port_clean.index = port_clean.index.normalize()
+
+    # Resample to weekly (Friday-ending)
+    port_weekly = (1 + port_clean).resample("W-FRI").prod() - 1
+    port_weekly = port_weekly.dropna()
+    port_weekly = port_weekly[port_weekly.index >= pd.Timestamp(start)]
+
+    # Resample each factor column to weekly
+    factor_weekly_df = (1 + factor_daily).resample("W-FRI").prod() - 1
+
+    # Extract betas — match factor names from data.pk columns
+    factor_names = factor_daily.columns.tolist()
+    beta_map = {}
+    for name in factor_names:
+        for key, val in betas.items():
+            if key.startswith("_"):
+                continue
+            if name in key or key in name:
+                beta_map[name] = val
+                break
+
+    alpha_weekly = betas.get("_alpha", 0) / 52
+
+    # Build attribution rows
+    rows = []
+    for date in port_weekly.index:
+        if date not in factor_weekly_df.index:
+            continue
+        row = {"Week Ending": date.strftime("%b %d, %Y")}
+        row["Portfolio"] = round(port_weekly.loc[date] * 100, 3)
+        explained = alpha_weekly * 100
+        row["Alpha"] = round(alpha_weekly * 100, 3)
+        for name in factor_names:
+            if name in factor_weekly_df.columns and name in beta_map:
+                contrib = beta_map[name] * factor_weekly_df.loc[date, name] * 100
+                row[name] = round(contrib, 3)
+                explained += contrib
+            else:
+                row[name] = 0.0
+        row["Residual"] = round(row["Portfolio"] - explained, 3)
+        rows.append(row)
+
+    return pd.DataFrame(rows)
 
 # ── 6. Sector mapping ─────────────────────────────────────────────────────
 _SECTOR_CACHE_PATH = Path(os.getenv("DATA_DIR", "data")) / "sector_cache.json"
