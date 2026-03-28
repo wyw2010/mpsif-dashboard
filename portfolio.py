@@ -947,6 +947,7 @@ def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end
 def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end: str) -> pd.DataFrame:
     # Daily factor returns from pickle
     factor_daily = pd.read_pickle('data.pk')
+    factor_daily = factor_daily.rename(columns={'mkt':'Market', 'momentum':'Momentum', 'growth':'Growth', 'value':'Value'}
     factor_daily.index = pd.to_datetime(factor_daily.index).normalize()
 
     # Clean portfolio returns
