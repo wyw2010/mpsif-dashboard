@@ -933,7 +933,7 @@ def weekly_theme_attribution(
 
     # Download daily prices for all tickers
     try:
-        prices = yf.download(tickers, start=start, end=end, progress=False)["Adj Close"]
+        prices = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)["Adj Close"]
     except Exception:
         prices = yf.download(tickers, start=start, end=end, progress=False)["Close"]
 
