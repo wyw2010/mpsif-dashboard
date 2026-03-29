@@ -882,71 +882,39 @@ def load_theme_map(filepath="data/Returns Attribution v2.xlsx") -> dict:
 
 
 def weekly_theme_attribution(
-    rets: pd.Series,
+    port_rets: pd.Series,
     holdings_df: pd.DataFrame,
     theme_map: dict,
     start: str,
     end: str,
+    asset_returns_path: str = "asset_returns.pk",
 ) -> pd.DataFrame:
     """Decompose weekly portfolio returns into theme-level contributions.
-
-    Each theme's weekly contribution = sum of (weight_i × weekly_return_i)
-    for all tickers i belonging to that theme.
-
-    Parameters
-    ----------
-    rets : pd.Series
-        Daily portfolio-level returns (used only for the total portfolio weekly return).
-    holdings_df : pd.DataFrame
-        Must have columns: 'Ticker', 'Weight (%)', and daily return series per ticker
-        OR we compute from price data. Simpler: pass individual asset daily returns.
-    theme_map : dict
-        Ticker → theme name mapping from load_theme_map().
-    start, end : str
-        Date range strings.
-
-    Returns
-    -------
-    pd.DataFrame with columns: Week Ending, Portfolio, <Theme1>, <Theme2>, ..., Residual
+    Theme contribution = sum of (portfolio_weight_i × weekly_return_i) for all tickers in theme.
+    Sum of all theme contributions = portfolio weekly return.
     """
-    import yfinance as yf
+    asset_daily = pd.read_pickle(asset_returns_path)
+    asset_daily.index = pd.to_datetime(asset_daily.index).normalize()
 
-    port_clean = rets.copy()
+    port_clean = port_rets.copy()
     port_clean.index = pd.to_datetime(port_clean.index).normalize()
+
     port_weekly = (1 + port_clean).resample("W-FRI").prod() - 1
     port_weekly = port_weekly.dropna()
     port_weekly = port_weekly[port_weekly.index >= pd.Timestamp(start)]
 
-    # Get unique tickers and themes
-    tickers = list(theme_map.keys())
-    themes = sorted(set(theme_map.values()))
+    asset_weekly = (1 + asset_daily).resample("W-FRI").prod() - 1
 
-    # Get weights from holdings_df (expects 'Ticker' and 'Weight (%)' columns)
     weight_map = {}
     if holdings_df is not None and not holdings_df.empty:
         for _, row in holdings_df.iterrows():
             t = row.get("Ticker", row.get("Symbol", ""))
             w = row.get("Weight (%)", row.get("Weight", 0))
             if isinstance(w, (int, float)) and pd.notna(w):
-                # Normalize: if weights are in decimal (< 1), convert to fraction; if %, divide by 100
                 weight_map[t] = w / 100 if w > 1 else w
 
-    # Download daily prices for all tickers
-    try:
-        prices = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)["Adj Close"]
-    except Exception:
-        prices = yf.download(tickers, start=start, end=end, progress=False)["Close"]
+    all_themes = sorted(set(theme_map.values()))
 
-    if isinstance(prices, pd.Series):
-        prices = prices.to_frame(name=tickers[0])
-
-    asset_daily = prices.pct_change().dropna()
-    asset_daily.index = pd.to_datetime(asset_daily.index).normalize()
-
-    # Resample each asset to weekly
-    asset_weekly = (1 + asset_daily).resample("W-FRI").prod() - 1
-
-    # Build rows
     rows = []
     for date in port_weekly.index:
         if date not in asset_weekly.index:
@@ -954,17 +922,14 @@ def weekly_theme_attribution(
         row = {"Week Ending": date.strftime("%b %d, %Y")}
         row["Portfolio"] = round(port_weekly.loc[date] * 100, 3)
 
-        explained = 0.0
-        for theme in themes:
+        for theme in all_themes:
             theme_tickers = [t for t, th in theme_map.items() if th == theme]
             contrib = 0.0
             for t in theme_tickers:
                 if t in asset_weekly.columns and t in weight_map:
                     contrib += weight_map[t] * asset_weekly.loc[date, t] * 100
             row[theme] = round(contrib, 3)
-            explained += contrib
 
-        row["Residual"] = round(row["Portfolio"] - explained, 3)
         rows.append(row)
 
     return pd.DataFrame(rows)
