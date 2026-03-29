@@ -933,7 +933,7 @@ def weekly_theme_attribution(
         if date not in weekly_rets.index:
             continue
         row = {"Week Ending": date.strftime("%b %d, %Y")}
-        row["Portfolio"] = round(port_weekly.loc[date], 2)
+        row["Portfolio"] = round(port_weekly.loc[date], 3)
 
         for theme in all_themes:
             theme_tickers = [t for t, th in theme_map.items() if th == theme]
@@ -945,7 +945,7 @@ def weekly_theme_attribution(
                 weight_map[t] * weekly_rets.loc[date, t]
                 for t in weight_map if t in weekly_rets.columns
             )
-            row[theme] = (contrib / total_for_week) if total_for_week else 0.0
+            row[theme] = (contrib * 100 / total_for_week) if total_for_week else 0.0
 
         rows.append(row)
 
