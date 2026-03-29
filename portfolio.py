@@ -887,24 +887,23 @@ def weekly_theme_attribution(
     theme_map: dict,
     start: str,
     end: str,
-    asset_returns_path: str = "asset_returns.pk",
 ) -> pd.DataFrame:
     """Decompose weekly portfolio returns into theme-level contributions.
-    Theme contribution = sum of (portfolio_weight_i × weekly_return_i) for all tickers in theme.
-    Sum of all theme contributions = portfolio weekly return.
+    1. Download adj close prices from yfinance for all tickers in theme_map
+    2. Compute each asset's weekly return
+    3. Multiply by its portfolio weight to get weighted weekly return
+    4. Group by theme and sum
     """
-    asset_daily = pd.read_pickle(asset_returns_path)
-    asset_daily.index = pd.to_datetime(asset_daily.index).normalize()
+    import yfinance as yf
 
+    # Portfolio weekly return for the "Portfolio" column
     port_clean = port_rets.copy()
     port_clean.index = pd.to_datetime(port_clean.index).normalize()
-
     port_weekly = (1 + port_clean).resample("W-FRI").prod() - 1
     port_weekly = port_weekly.dropna()
     port_weekly = port_weekly[port_weekly.index >= pd.Timestamp(start)]
 
-    asset_weekly = (1 + asset_daily).resample("W-FRI").prod() - 1
-
+    # Build weight map from holdings
     weight_map = {}
     if holdings_df is not None and not holdings_df.empty:
         for _, row in holdings_df.iterrows():
@@ -913,6 +912,22 @@ def weekly_theme_attribution(
             if isinstance(w, (int, float)) and pd.notna(w):
                 weight_map[t] = w / 100 if w > 1 else w
 
+    # Download daily prices
+    tickers = list(theme_map.keys())
+    prices = yf.download(tickers, start=start, end=end, progress=False)
+    if "Adj Close" in prices.columns.get_level_values(0):
+        prices = prices["Adj Close"]
+    else:
+        prices = prices["Close"]
+    if isinstance(prices, pd.Series):
+        prices = prices.to_frame(name=tickers[0])
+
+    # Daily returns → weekly returns per asset
+    daily_rets = prices.pct_change().dropna()
+    daily_rets.index = pd.to_datetime(daily_rets.index).normalize()
+    asset_weekly = (1 + daily_rets).resample("W-FRI").prod() - 1
+
+    # Get all themes
     all_themes = sorted(set(theme_map.values()))
 
     rows = []
