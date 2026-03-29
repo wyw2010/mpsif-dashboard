@@ -876,8 +876,6 @@ def load_theme_map(filepath="data/Returns Attribution v2.xlsx") -> dict:
     df = df.dropna(subset=["Symbol", "Subtheme"])
     # Filter out non-string subthemes (junk rows like 649.71)
     df = df[df["Subtheme"].apply(lambda x: isinstance(x, str))]
-    # Exclude benchmark
-    df = df[df["Subtheme"] != "SPY"]
     return dict(zip(df["Symbol"], df["Subtheme"]))
 
 
@@ -910,7 +908,7 @@ def weekly_theme_attribution(
             t = row.get("Ticker", row.get("Symbol", ""))
             w = row.get("Weight (%)", row.get("Weight", 0))
             if isinstance(w, (int, float)) and pd.notna(w):
-                weight_map[t] = w / 100 if w > 1 else w
+                weight_map[t] = w / 100
 
     # Download daily prices
     tickers = list(theme_map.keys())
@@ -925,25 +923,25 @@ def weekly_theme_attribution(
     # Daily returns → weekly returns per asset
     daily_rets = prices.pct_change().dropna()
     daily_rets.index = pd.to_datetime(daily_rets.index).normalize()
-    asset_weekly = (1 + daily_rets).resample("W-FRI").prod() - 1
+    weekly_rets = (1 + daily_rets).resample("W-FRI").prod() - 1
 
     # Get all themes
     all_themes = sorted(set(theme_map.values()))
 
     rows = []
     for date in port_weekly.index:
-        if date not in asset_weekly.index:
+        if date not in weekly_rets.index:
             continue
         row = {"Week Ending": date.strftime("%b %d, %Y")}
-        row["Portfolio"] = round(port_weekly.loc[date] * 100, 3)
+        row["Portfolio"] = round(port_weekly.loc[date], 2)
 
         for theme in all_themes:
             theme_tickers = [t for t, th in theme_map.items() if th == theme]
             contrib = 0.0
             for t in theme_tickers:
-                if t in asset_weekly.columns and t in weight_map:
-                    contrib += weight_map[t] * asset_weekly.loc[date, t] * 100
-            row[theme] = round(contrib, 3)
+                if t in weekly_rets.columns and t in weight_map:
+                    contrib += weight_map[t] * weekly_rets.loc[date, t]
+            row[theme] = round(contrib, 2)
 
         rows.append(row)
 
