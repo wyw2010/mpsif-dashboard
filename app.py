@@ -624,14 +624,14 @@ def combine_returns(subfund_data: dict) -> pd.Series:
     return combined
 
 # used to make Thematic fund's weekly returns attributed by themes
-def make_theme_attribution_pie(attribution_df: pd.DataFrame, height: int = 350):
-    """Pie chart of last week's returns attributed to themes."""
+def make_theme_attribution_bar(attribution_df: pd.DataFrame, height: int = 400):
+    """Bar chart of last week's returns attributed to themes."""
     if attribution_df.empty:
         return go.Figure()
 
     last_row = attribution_df.iloc[-1]
 
-    skip_cols = {"Week Ending", "Portfolio", "Residual"}
+    skip_cols = {"Week Ending", "Portfolio"}
     data = []
     for col in attribution_df.columns:
         if col in skip_cols:
@@ -639,36 +639,30 @@ def make_theme_attribution_pie(attribution_df: pd.DataFrame, height: int = 350):
         val = last_row[col]
         if isinstance(val, str):
             val = float(val.replace("%", "").replace("+", ""))
-        if val != 0.0:
-            data.append({"Theme": col, "Abs": abs(val), "Raw": val})
-
-    if last_row.get("Residual", 0) != 0.0:
-        res = last_row["Residual"]
-        if isinstance(res, str):
-            res = float(res.replace("%", "").replace("+", ""))
-        data.append({"Theme": "Residual", "Abs": abs(res), "Raw": res})
+        data.append({"Theme": col, "Contribution": val})
 
     if not data:
         return go.Figure()
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(data).sort_values("Contribution")
 
-    fig = go.Figure(go.Pie(
-        labels=df["Theme"], values=df["Abs"], hole=0.45,
-        textinfo="label+percent", textfont_size=11,
-        marker=dict(colors=[
-            NYU_PURPLE, "#8900e1", "#2563EB", "#3B82F6", "#60A5FA",
-            "#D97706", "#F59E0B", "#059669", "#10B981", "#34D399",
-            "#EF4444", "#6366F1", "#8B5CF6", "#EC4899", "#F97316",
-            "#14B8A6", "#64748B", "#A78BFA", "#FB923C", "#4ADE80",
-        ]),
-        hovertemplate="%{label}<br>Contribution: %{customdata:+.3f}%<extra></extra>",
-        customdata=df["Raw"],
+    colors = [NYU_PURPLE if v >= 0 else "#EF4444" for v in df["Contribution"]]
+
+    fig = go.Figure(go.Bar(
+        x=df["Contribution"],
+        y=df["Theme"],
+        orientation="h",
+        marker=dict(color=colors),
+        hovertemplate="%{y}<br>Contribution: %{x:+.3f}%<extra></extra>",
     ))
     fig.update_layout(
-        height=height, margin=dict(l=0, r=0, t=10, b=0),
-        paper_bgcolor=WHITE, font=_PLOTLY_FONT,
-        showlegend=False,
+        height=height,
+        margin=dict(l=0, r=20, t=10, b=0),
+        paper_bgcolor=WHITE,
+        plot_bgcolor=WHITE,
+        font=_PLOTLY_FONT,
+        xaxis=dict(title="Contribution (%)", zeroline=True, zerolinecolor="#CBD5E1"),
+        yaxis=dict(title=""),
     )
     return fig
 
@@ -1094,7 +1088,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 # Pie chart of last week's theme attribution
                 col_pie, col_table = st.columns([1, 2])
                 with col_pie:
-                    theme_pie = make_theme_attribution_pie(weekly_theme)
+                    theme_pie = make_theme_attribution_bar(weekly_theme)
                     st.plotly_chart(theme_pie, use_container_width=True)
 
                 with col_table:
