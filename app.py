@@ -1084,7 +1084,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
             st.markdown("")
 
         # ── Weekly Theme Attribution ──
-        if name == "thematic":
+        if name == "Thematic":
             st.markdown('<div class="section-header">Weekly Theme Attribution</div>', unsafe_allow_html=True)
             theme_map = pf.load_theme_map("Returns_Attribution_v2.xlsx")
             weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
