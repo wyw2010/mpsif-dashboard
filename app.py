@@ -1084,32 +1084,32 @@ for idx, name in enumerate(pf.SUBFUNDS):
             st.markdown("")
 
         # ── Weekly Theme Attribution ──
-                if name == "thematic":
-                    st.markdown('<div class="section-header">Weekly Theme Attribution</div>', unsafe_allow_html=True)
-                    theme_map = pf.load_theme_map("Returns_Attribution_v2.xlsx")
-                    weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
-                    if not weekly_theme.empty:
-                        st.caption("Theme contributions (%) = Σ(weight × asset weekly return) per theme. Residual = unexplained (benchmark + tracking error).")
-        
-                        # Pie chart of last week's theme attribution
-                        col_pie, col_table = st.columns([1, 2])
-                        with col_pie:
-                            theme_pie = make_theme_attribution_pie(weekly_theme)
-                            st.plotly_chart(theme_pie, use_container_width=True)
-        
-                        with col_table:
-                            display_wt = weekly_theme.copy()
-                            for col in display_wt.columns:
-                                if col != "Week Ending":
-                                    display_wt[col] = display_wt[col].apply(lambda x: f"{x:+.3f}%")
-                            components.html(
-                                html_table(display_wt, max_height="400px"),
-                                height=min(450, 40 * len(display_wt) + 55),
-                                scrolling=True,
-                            )
-                    else:
-                        st.info("Insufficient data for weekly theme attribution.")
-                    st.markdown("")
+        if name == "thematic":
+            st.markdown('<div class="section-header">Weekly Theme Attribution</div>', unsafe_allow_html=True)
+            theme_map = pf.load_theme_map("Returns_Attribution_v2.xlsx")
+            weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
+            if not weekly_theme.empty:
+                st.caption("Theme contributions (%) = Σ(weight × asset weekly return) per theme. Residual = unexplained (benchmark + tracking error).")
+
+                # Pie chart of last week's theme attribution
+                col_pie, col_table = st.columns([1, 2])
+                with col_pie:
+                    theme_pie = make_theme_attribution_pie(weekly_theme)
+                    st.plotly_chart(theme_pie, use_container_width=True)
+
+                with col_table:
+                    display_wt = weekly_theme.copy()
+                    for col in display_wt.columns:
+                        if col != "Week Ending":
+                            display_wt[col] = display_wt[col].apply(lambda x: f"{x:+.3f}%")
+                    components.html(
+                        html_table(display_wt, max_height="400px"),
+                        height=min(450, 40 * len(display_wt) + 55),
+                        scrolling=True,
+                    )
+            else:
+                st.info("Insufficient data for weekly theme attribution.")
+            st.markdown("")
 
         # ── Individual Stock Factor Exposure ──
         if not holdings.empty and not rets.empty:
