@@ -6,3 +6,4 @@ python-dotenv
 plotly==6.0.1
 scipy
 openpyxl
+yfinance
