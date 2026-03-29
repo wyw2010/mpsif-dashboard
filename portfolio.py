@@ -908,7 +908,7 @@ def weekly_theme_attribution(
             t = row.get("Ticker", row.get("Symbol", ""))
             w = row.get("Weight (%)", row.get("Weight", 0))
             if isinstance(w, (int, float)) and pd.notna(w):
-                weight_map[t] = w / 100
+                weight_map[t] = w
 
     # Download daily prices
     tickers = list(theme_map.keys())
