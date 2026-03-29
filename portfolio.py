@@ -945,7 +945,7 @@ def weekly_theme_attribution(
                 weight_map[t] * weekly_rets.loc[date, t]
                 for t in weight_map if t in weekly_rets.columns
             )
-            row[theme] = (-1 * contrib * 100 / total_for_week) if total_for_week else 0.0
+            row[theme] = (contrib * 100 / total_for_week) if total_for_week else 0.0
 
         rows.append(row)
 
