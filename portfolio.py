@@ -868,7 +868,7 @@ def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict
     return result
 
 
-def load_theme_map(filepath="Returns_Attribution_v2.xlsx") -> dict:
+def load_theme_map(filepath="data/Returns_Attribution_v2.xlsx") -> dict:
     """Load ticker → theme mapping from the Portfolio Positions tab.
     Returns dict like {'APLD': 'Digital Infra', 'ABNB': 'Experientials', ...}
     """
