@@ -623,6 +623,55 @@ def combine_returns(subfund_data: dict) -> pd.Series:
     combined = combined[combined.index >= ret_df.index[0]]
     return combined
 
+# used to make Thematic fund's weekly returns attributed by themes
+def make_theme_attribution_pie(attribution_df: pd.DataFrame, height: int = 350):
+    """Pie chart of last week's returns attributed to themes."""
+    if attribution_df.empty:
+        return go.Figure()
+
+    last_row = attribution_df.iloc[-1]
+
+    skip_cols = {"Week Ending", "Portfolio", "Residual"}
+    data = []
+    for col in attribution_df.columns:
+        if col in skip_cols:
+            continue
+        val = last_row[col]
+        if isinstance(val, str):
+            val = float(val.replace("%", "").replace("+", ""))
+        if val != 0.0:
+            data.append({"Theme": col, "Abs": abs(val), "Raw": val})
+
+    if last_row.get("Residual", 0) != 0.0:
+        res = last_row["Residual"]
+        if isinstance(res, str):
+            res = float(res.replace("%", "").replace("+", ""))
+        data.append({"Theme": "Residual", "Abs": abs(res), "Raw": res})
+
+    if not data:
+        return go.Figure()
+
+    df = pd.DataFrame(data)
+
+    fig = go.Figure(go.Pie(
+        labels=df["Theme"], values=df["Abs"], hole=0.45,
+        textinfo="label+percent", textfont_size=11,
+        marker=dict(colors=[
+            NYU_PURPLE, "#8900e1", "#2563EB", "#3B82F6", "#60A5FA",
+            "#D97706", "#F59E0B", "#059669", "#10B981", "#34D399",
+            "#EF4444", "#6366F1", "#8B5CF6", "#EC4899", "#F97316",
+            "#14B8A6", "#64748B", "#A78BFA", "#FB923C", "#4ADE80",
+        ]),
+        hovertemplate="%{label}<br>Contribution: %{customdata:+.3f}%<extra></extra>",
+        customdata=df["Raw"],
+    ))
+    fig.update_layout(
+        height=height, margin=dict(l=0, r=0, t=10, b=0),
+        paper_bgcolor=WHITE, font=_PLOTLY_FONT,
+        showlegend=False,
+    )
+    return fig
+
 
 @st.cache_data(ttl=900, show_spinner=False)
 def load_blended_benchmark(start: str, end: str) -> pd.Series:
@@ -1033,6 +1082,34 @@ for idx, name in enumerate(pf.SUBFUNDS):
             else:
                 st.info("Insufficient data for weekly attribution.")
             st.markdown("")
+
+        # ── Weekly Theme Attribution ──
+                if name == "thematic":
+                    st.markdown('<div class="section-header">Weekly Theme Attribution</div>', unsafe_allow_html=True)
+                    theme_map = pf.load_theme_map("Returns_Attribution_v2.xlsx")
+                    weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
+                    if not weekly_theme.empty:
+                        st.caption("Theme contributions (%) = Σ(weight × asset weekly return) per theme. Residual = unexplained (benchmark + tracking error).")
+        
+                        # Pie chart of last week's theme attribution
+                        col_pie, col_table = st.columns([1, 2])
+                        with col_pie:
+                            theme_pie = make_theme_attribution_pie(weekly_theme)
+                            st.plotly_chart(theme_pie, use_container_width=True)
+        
+                        with col_table:
+                            display_wt = weekly_theme.copy()
+                            for col in display_wt.columns:
+                                if col != "Week Ending":
+                                    display_wt[col] = display_wt[col].apply(lambda x: f"{x:+.3f}%")
+                            components.html(
+                                html_table(display_wt, max_height="400px"),
+                                height=min(450, 40 * len(display_wt) + 55),
+                                scrolling=True,
+                            )
+                    else:
+                        st.info("Insufficient data for weekly theme attribution.")
+                    st.markdown("")
 
         # ── Individual Stock Factor Exposure ──
         if not holdings.empty and not rets.empty:
