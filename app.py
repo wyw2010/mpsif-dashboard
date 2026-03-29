@@ -1083,7 +1083,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
             theme_map = pf.load_theme_map()
             weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
             if not weekly_theme.empty:
-                st.caption("Theme contributions (%) = Σ(weight × asset weekly return) per theme. Residual = unexplained (benchmark + tracking error).")
+                st.caption("Theme contributions (%) = Σ(weight × asset weekly return) / total return, computed for each theme.")
 
                 # Pie chart of last week's theme attribution
                 col_pie, col_table = st.columns([1, 2])
