@@ -924,6 +924,7 @@ def weekly_theme_attribution(
     daily_rets = prices.pct_change().dropna()
     daily_rets.index = pd.to_datetime(daily_rets.index).normalize()
     weekly_rets = (1 + daily_rets).resample("W-FRI").prod() - 1
+    total_weekly_ret = np.sum(weekly_rets * weight_map)
 
     # Get all themes
     all_themes = sorted(set(theme_map.values()))
@@ -941,7 +942,7 @@ def weekly_theme_attribution(
             for t in theme_tickers:
                 if t in weekly_rets.columns and t in weight_map:
                     contrib += weight_map[t] * weekly_rets.loc[date, t]
-            row[theme] = round(contrib, 2)
+            row[theme] = round(contrib / total_weekly_ret, 3)
 
         rows.append(row)
 
