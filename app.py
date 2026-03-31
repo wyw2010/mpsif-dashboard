@@ -741,7 +741,7 @@ with tabs[0]:
             with mcols[0]:
                 st.markdown(metric_card("Total AUM", fmt_dollar(total_aum)), unsafe_allow_html=True)
             with mcols[1]:
-                st.markdown(metric_card("Sharpe Ratio", f"{pf.sharpe(combined_rets):.3f}"), unsafe_allow_html=True)
+                st.markdown(metric_card(f"Sharpe Ratio (Rf={pf.RISK_FREE_RATE:.1%})", f"{pf.sharpe(combined_rets):.3f}"), unsafe_allow_html=True)
             with mcols[2]:
                 st.markdown(metric_card("Max Drawdown", fmt_pct(pf.max_dd(combined_rets) * 100), color_class(pf.max_dd(combined_rets))), unsafe_allow_html=True)
             with mcols[3]:
@@ -879,7 +879,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
         with mcols[0]:
             st.markdown(metric_card("AUM", fmt_dollar(aum)), unsafe_allow_html=True)
         with mcols[1]:
-            st.markdown(metric_card("Sharpe", f"{pf.sharpe(rets):.3f}"), unsafe_allow_html=True)
+            st.markdown(metric_card(f"Sharpe (Rf={pf.RISK_FREE_RATE:.1%})", f"{pf.sharpe(rets):.3f}"), unsafe_allow_html=True)
         with mcols[2]:
             st.markdown(metric_card("Max DD", fmt_pct(pf.max_dd(rets) * 100), color_class(pf.max_dd(rets))), unsafe_allow_html=True)
         with mcols[3]:

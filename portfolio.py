@@ -36,8 +36,10 @@ BENCHMARKS = {
     "Opportunistic": "IWV",
     "Fixed Income": "AGG",
 }
-RISK_FREE_RATE = 0.05  # annualised
 EST = ZoneInfo("America/New_York")
+
+
+RISK_FREE_RATE = 0.043  # 3-month T-bill rate (annualised)
 
 
 def _now_est() -> datetime:
