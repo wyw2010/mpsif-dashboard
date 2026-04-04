@@ -1087,6 +1087,13 @@ def weekly_theme_attribution(
         row = {"Week Ending": date.strftime("%b %d, %Y")}
         row["Portfolio"] = round(port_weekly.loc[date] * 100, 3)
 
+        # Total weighted return for all tickers this week (used as denominator
+        # so theme contributions sum to 100%).
+        total_for_week = sum(
+            weight_map[t] * weekly_rets.loc[date, t]
+            for t in weight_map if t in weekly_rets.columns
+        )
+
         for theme in all_themes:
             theme_tickers = [t for t, th in theme_map.items() if th == theme]
             contrib = 0.0
@@ -1094,7 +1101,7 @@ def weekly_theme_attribution(
                 if t in weekly_rets.columns and t in weight_map:
                     contrib += weight_map[t] * weekly_rets.loc[date, t]
             row[theme] = (contrib * 100 / total_for_week) if total_for_week else 0.0
-        
+
         # Add Unclassified bucket for tickers in holdings but not in theme_map
         unclassified = sum(
             weight_map[t] * weekly_rets.loc[date, t]
