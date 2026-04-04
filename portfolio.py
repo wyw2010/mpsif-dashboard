@@ -834,14 +834,14 @@ def compute_factor_betas(
                 weight_map[t] = w / 100.0  # convert to fraction
 
     if not weight_map:
-        log.warning("Bottom-up factor betas: no holdings with weights")
+        log.warning("Factor betas: no holdings with weights")
         return {}
 
     # Fetch daily prices for all holdings
     tickers = list(weight_map.keys())
     prices = fetch_prices(tickers, start, end)
     if prices.empty:
-        log.warning("Bottom-up factor betas: could not fetch prices")
+        log.warning("Factor betas: could not fetch prices")
         return {}
 
     daily_rets = prices.pct_change().dropna()
@@ -934,8 +934,9 @@ def compute_factor_betas(
         "_stats": {},
     }
 
+    FACTOR_LABEL_MAP = {"mkt": "Market", "momentum": "Momentum", "growth": "Growth", "value": "Value"}
     for fname in factor_names:
-        label = fname.title()
+        label = FACTOR_LABEL_MAP.get(fname, fname.title())
         result[label] = round(agg_betas[fname], 3)
         result["_stats"][label] = {"t_stat": 0.0, "p_value": 1.0}
 
