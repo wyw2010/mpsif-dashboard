@@ -1046,7 +1046,8 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(idio * 100)), unsafe_allow_html=True)
 
                 st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-
+                
+                """
                 # Stats table
                 stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
                 for fname, bval in factor_items.items():
@@ -1056,6 +1057,8 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
                 stat_df = pd.DataFrame(stat_rows)
                 components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
+                """
+
 
             render_factor_table(pf.compute_factor_betas(rets, holdings, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
             render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
