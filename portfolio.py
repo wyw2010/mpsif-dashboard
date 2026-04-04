@@ -709,9 +709,10 @@ FACTOR_ETFS = {
     "Defensive": "SPLV",
 }
 
+"""
 # Uses custom factor construction from data.pk (contributed by al7816-cmd)
 def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
-    """Regress portfolio returns on factor returns from data.pk (multivariate OLS, trailing 6 months)."""
+    # Regress portfolio returns on factor returns from data.pk (multivariate OLS, trailing 6 months).
     
     # Load factor return data
     factor_data = pd.read_pickle('data.pk')
@@ -793,7 +794,156 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
 
     log.info(f"Factor betas: {result}")
     return result
+"""
 
+# BOTTOM-UP FACTOR BETAS: Computes factor betas from individual stocks then weight to get portfolio factor betas
+def compute_factor_betas_bottomup(
+    port_rets: pd.Series,
+    holdings_df: pd.DataFrame,
+    theme_map: dict,
+    start: str,
+    end: str,
+) -> dict:
+    """Bottom-up factor betas: regress each stock individually, then
+    weight by portfolio position size to get aggregate factor exposures."""
+    import yfinance as yf
+    from scipy import stats as sp_stats
+
+    # Load factor return data
+    factor_data = pd.read_pickle('data.pk')
+    if factor_data.empty:
+        log.warning("Factor betas: no factor data found")
+        return {}
+
+    factor_data.index = pd.to_datetime(factor_data.index).normalize()
+    start_dt = pd.to_datetime(start)
+    end_dt = pd.to_datetime(end)
+    factor_rets = factor_data.loc[start_dt:end_dt].copy()
+    factor_names = [c for c in factor_rets.columns]
+
+    if len(factor_rets) < 10:
+        log.warning("Factor betas: insufficient factor data")
+        return {}
+
+    # Build weight map from holdings (weight as fraction, not %)
+    weight_map = {}
+    if holdings_df is not None and not holdings_df.empty:
+        for _, row in holdings_df.iterrows():
+            t = row.get("Ticker", row.get("Symbol", ""))
+            w = row.get("Weight (%)", row.get("Weight", 0))
+            if isinstance(w, (int, float)) and pd.notna(w):
+                weight_map[t] = w / 100.0  # convert to fraction
+
+    if not weight_map:
+        log.warning("Bottom-up factor betas: no holdings with weights")
+        return {}
+
+    # Fetch daily prices for all holdings
+    tickers = list(weight_map.keys())
+    prices = fetch_prices(tickers, start, end)
+    if prices.empty:
+        log.warning("Bottom-up factor betas: could not fetch prices")
+        return {}
+
+    daily_rets = prices.pct_change().dropna()
+    daily_rets.index = pd.to_datetime(daily_rets.index).normalize()
+
+    # Regress each stock and collect betas + alphas + residuals
+    stock_betas = {}   # ticker -> {factor_name: beta, "_alpha": alpha_daily}
+    stock_resid = {}   # ticker -> residual series
+
+    for ticker in tickers:
+        if ticker not in daily_rets.columns:
+            continue
+
+        stock_ret = daily_rets[ticker]
+        aligned = pd.concat(
+            [stock_ret.rename("stock"), factor_rets],
+            axis=1
+        ).dropna()
+
+        if len(aligned) < 10:
+            continue
+
+        y = aligned["stock"].values.astype(np.float64)
+        X = aligned[[c for c in aligned.columns if c != "stock"]].values.astype(np.float64)
+        X = np.column_stack([np.ones(len(X)), X])
+
+        coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        residuals = y - X @ coeffs
+
+        betas = {}
+        for i, fname in enumerate(factor_names):
+            betas[fname] = float(coeffs[i + 1])
+        betas["_alpha"] = float(coeffs[0])
+
+        stock_betas[ticker] = betas
+        stock_resid[ticker] = pd.Series(residuals, index=aligned.index)
+
+    if not stock_betas:
+        log.warning("Bottom-up factor betas: no stocks had enough data")
+        return {}
+
+    # Renormalize weights to only include stocks we successfully regressed
+    active_tickers = list(stock_betas.keys())
+    total_active_weight = sum(weight_map[t] for t in active_tickers if t in weight_map)
+    if total_active_weight <= 0:
+        return {}
+
+    norm_weights = {
+        t: weight_map[t] / total_active_weight
+        for t in active_tickers if t in weight_map
+    }
+
+    # Weighted-average betas across stocks
+    agg_betas = {fname: 0.0 for fname in factor_names}
+    agg_alpha_daily = 0.0
+
+    for ticker, w in norm_weights.items():
+        sb = stock_betas[ticker]
+        agg_alpha_daily += w * sb["_alpha"]
+        for fname in factor_names:
+            agg_betas[fname] += w * sb[fname]
+
+    # Compute portfolio-level residual as weighted sum of stock residuals
+    resid_df = pd.DataFrame(stock_resid)
+    common_dates = resid_df.dropna().index
+    if len(common_dates) > 1:
+        weighted_resid = sum(
+            norm_weights[t] * resid_df[t] for t in norm_weights if t in resid_df.columns
+        ).loc[common_dates]
+        idio_vol = float(np.std(weighted_resid, ddof=1) * np.sqrt(252))
+    else:
+        idio_vol = 0.0
+
+    # Portfolio-level R^2 from weighted residuals vs actual portfolio returns
+    port_clean = port_rets.copy()
+    port_clean.index = pd.to_datetime(port_clean.index).normalize()
+    aligned_port = port_clean.reindex(common_dates).dropna()
+    if len(aligned_port) > 1:
+        ss_tot = float(np.sum((aligned_port - aligned_port.mean()) ** 2))
+        weighted_resid_aligned = weighted_resid.reindex(aligned_port.index).dropna()
+        ss_res = float(np.sum(weighted_resid_aligned ** 2))
+        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    else:
+        r_squared = 0.0
+
+    result = {
+        "_alpha": round(agg_alpha_daily * 252, 3),
+        "_idio_vol": round(idio_vol, 3),
+        "_r_squared": round(r_squared, 3),
+        "_stats": {},
+    }
+
+    for fname in factor_names:
+        label = fname.title()
+        result[label] = round(agg_betas[fname], 3)
+        result["_stats"][label] = {"t_stat": 0.0, "p_value": 1.0}
+
+    log.info(f"Factor betas: {result}")
+    return result
+
+    
 
 def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
     """Regress portfolio returns on factor ETF returns (multivariate OLS)."""
@@ -956,6 +1106,9 @@ def weekly_theme_attribution(
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+
 
 """
 def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end: str) -> pd.DataFrame:
