@@ -1031,59 +1031,6 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 alpha_t = result.pop("_alpha_t", 0.0)
                 alpha_p = result.pop("_alpha_p", 0.0)
                 stats = result.pop("_stats", {})
-
-                # Factor beta cards + R²
-                factor_items = {k: v for k, v in result.items() if not k.startswith("_")}
-                fcols = st.columns(len(factor_items) + 3)
-                with fcols[0]:
-                    st.markdown(metric_card("R²", f"{r_sq:.3f}"), unsafe_allow_html=True)
-                with fcols[1]:
-                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(alpha * 100), color_class(alpha)), unsafe_allow_html=True)
-                for i, (fname, bval) in enumerate(factor_items.items()):
-                    with fcols[i + 2]:
-                        st.markdown(metric_card(fname, f"{bval:.3f}", color_class(bval)), unsafe_allow_html=True)
-                with fcols[-1]:
-                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(idio * 100)), unsafe_allow_html=True)
-
-                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
-                
-                
-                # Stats table
-                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
-                for fname, bval in factor_items.items():
-                    s = stats.get(fname, {})
-                    t = s.get("t_stat", 0.0)
-                    p = s.get("p_value", 1.0)
-                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
-                stat_df = pd.DataFrame(stat_rows)
-                components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
-
-            render_factor_table(pf.compute_factor_betas(rets, holdings, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
-            render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
-
-        # Compute factor betas (save copy before render_factor_table pops keys)
-        ff_result = pf.compute_factor_betas(rets, holdings, start_str, end_str)
-        ff_betas_copy = dict(ff_result)  # preserve before .pop() calls
-        render_factor_table(ff_result, "Factor Exposure (Fama-French)", f"ff_{name}")
-        render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
-
-        # ── Weekly Return Attribution Tables ──
-        # ── Factor Exposure ──
-        if not rets.empty:
-            start_str = (d["first_date"] - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
-            end_str = (d["end_date"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-
-            def render_factor_table(result: dict, title: str, key_suffix: str):
-                """Render factor exposure as metric cards + stats table."""
-                if not result:
-                    return
-                st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
-                alpha = result.pop("_alpha", 0.0)
-                idio = result.pop("_idio_vol", 0.0)
-                r_sq = result.pop("_r_squared", 0.0)
-                alpha_t = result.pop("_alpha_t", 0.0)
-                alpha_p = result.pop("_alpha_p", 0.0)
-                stats = result.pop("_stats", {})
                 # Factor beta cards + R²
                 factor_items = {k: v for k, v in result.items() if not k.startswith("_")}
                 fcols = st.columns(len(factor_items) + 3)
