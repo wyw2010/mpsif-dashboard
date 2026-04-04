@@ -1047,21 +1047,203 @@ for idx, name in enumerate(pf.SUBFUNDS):
 
                 st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
                 
-                """
+                
                 # Stats table
-                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
-                for fname, bval in factor_items.items():
-                    s = stats.get(fname, {})
-                    t = s.get("t_stat", 0.0)
-                    p = s.get("p_value", 1.0)
-                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
-                stat_df = pd.DataFrame(stat_rows)
-                components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
-                """
-
+                # stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
+                # for fname, bval in factor_items.items():
+                #     s = stats.get(fname, {})
+                #     t = s.get("t_stat", 0.0)
+                #     p = s.get("p_value", 1.0)
+                #     stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
+                # stat_df = pd.DataFrame(stat_rows)
+                # components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
 
             render_factor_table(pf.compute_factor_betas(rets, holdings, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
             render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
+
+        # Compute factor betas (save copy before render_factor_table pops keys)
+        ff_result = pf.compute_factor_betas(rets, holdings, start_str, end_str)
+        ff_betas_copy = dict(ff_result)  # preserve before .pop() calls
+        render_factor_table(ff_result, "Factor Exposure (Fama-French)", f"ff_{name}")
+        render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
+
+        # ── Weekly Return Attribution Tables ──
+        # ── Factor Exposure ──
+        if not rets.empty:
+            start_str = (d["first_date"] - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
+            end_str = (d["end_date"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+            def render_factor_table(result: dict, title: str, key_suffix: str):
+                """Render factor exposure as metric cards + stats table."""
+                if not result:
+                    return
+                st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
+                alpha = result.pop("_alpha", 0.0)
+                idio = result.pop("_idio_vol", 0.0)
+                r_sq = result.pop("_r_squared", 0.0)
+                alpha_t = result.pop("_alpha_t", 0.0)
+                alpha_p = result.pop("_alpha_p", 0.0)
+                stats = result.pop("_stats", {})
+                # Factor beta cards + R²
+                factor_items = {k: v for k, v in result.items() if not k.startswith("_")}
+                fcols = st.columns(len(factor_items) + 3)
+                with fcols[0]:
+                    st.markdown(metric_card("R²", f"{r_sq:.3f}"), unsafe_allow_html=True)
+                with fcols[1]:
+                    st.markdown(metric_card("Alpha (Ann.)", fmt_pct(alpha * 100), color_class(alpha)), unsafe_allow_html=True)
+                for i, (fname, bval) in enumerate(factor_items.items()):
+                    with fcols[i + 2]:
+                        st.markdown(metric_card(fname, f"{bval:.3f}", color_class(bval)), unsafe_allow_html=True)
+                with fcols[-1]:
+                    st.markdown(metric_card("Idio. Vol (Ann.)", fmt_pct(idio * 100)), unsafe_allow_html=True)
+                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+
+            # Compute factor betas (save a copy before render_factor_table pops keys)
+            ff_result = pf.compute_factor_betas(rets, holdings, start_str, end_str)
+            ff_betas_copy = dict(ff_result)  # preserve before .pop() calls
+            render_factor_table(ff_result, "Factor Exposure", f"ff_{name}")
+            render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
+
+            # ── Weekly Return Attribution Tables ──
+            st.markdown('<div class="section-header">Weekly Return Attribution</div>', unsafe_allow_html=True)
+
+            # Load factor data
+            factor_data = pd.read_pickle('data.pk')
+            factor_data.index = pd.to_datetime(factor_data.index).normalize()
+            factor_data = factor_data.rename(columns={'mkt': 'Market', 'momentum': 'Momentum', 'growth': 'Growth', 'value': 'Value'})
+
+            # Portfolio weekly returns
+            port_clean = rets.copy()
+            port_clean.index = pd.to_datetime(port_clean.index).normalize()
+            port_weekly = (1 + port_clean).resample("W-FRI").prod() - 1
+            port_weekly = port_weekly.dropna()
+
+            # Factor weekly returns
+            factor_weekly = (1 + factor_data).resample("W-FRI").prod() - 1
+
+            # SPY weekly returns for excess return table
+            spy_prices = pf.fetch_prices(["SPY"], start_str, end_str)
+            spy_daily = spy_prices["SPY"].pct_change().dropna() if "SPY" in spy_prices.columns else pd.Series(dtype=float)
+            spy_daily.index = pd.to_datetime(spy_daily.index).normalize()
+            spy_weekly = (1 + spy_daily).resample("W-FRI").prod() - 1 if not spy_daily.empty else pd.Series(dtype=float)
+
+            # Extract betas from the saved copy
+            beta_map = {}
+            factor_names = ['Market', 'Momentum', 'Growth', 'Value']
+            for fname in factor_names:
+                for key, val in ff_betas_copy.items():
+                    if key.startswith("_"):
+                        continue
+                    if fname.lower() in key.lower():
+                        beta_map[fname] = val
+                        break
+
+            # Get last week
+            common_dates = port_weekly.index.intersection(factor_weekly.index)
+            if len(common_dates) > 0:
+                last_week = common_dates[-1]
+                port_ret_week = port_weekly.loc[last_week]
+                factor_rets_week = {f: factor_weekly.loc[last_week, f] for f in factor_names if f in factor_weekly.columns}
+                spy_ret_week = spy_weekly.loc[last_week] if last_week in spy_weekly.index else 0.0
+
+                # ── Absolute Return Table ──
+                imputed_total = sum(beta_map.get(f, 0) * factor_rets_week.get(f, 0) for f in factor_names)
+                alpha_residual = port_ret_week - imputed_total
+
+                abs_rows = [
+                    {
+                        "": "Sub-Fund",
+                        "Total Return": f"{port_ret_week * 100:+.3f}%",
+                        "Market β": f"{beta_map.get('Market', 0):.3f}",
+                        "Value β": f"{beta_map.get('Value', 0):.3f}",
+                        "Momentum β": f"{beta_map.get('Momentum', 0):.3f}",
+                        "Growth β": f"{beta_map.get('Growth', 0):.3f}",
+                    },
+                    {
+                        "": "Factor Returns",
+                        "Total Return": "",
+                        "Market β": f"{factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                    },
+                    {
+                        "": "Imputed Return",
+                        "Total Return": f"{imputed_total * 100:+.3f}%",
+                        "Market β": f"{beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                    },
+                    {
+                        "": "Alpha",
+                        "Total Return": f"{alpha_residual * 100:+.3f}%",
+                        "Market β": "",
+                        "Value β": "",
+                        "Momentum β": "",
+                        "Growth β": "",
+                    },
+                ]
+                abs_df = pd.DataFrame(abs_rows)
+                st.markdown("**Absolute Return**")
+                st.caption(f"Week ending {last_week.strftime('%b %d, %Y')}")
+                components.html(html_table(abs_df, max_height="250px"), height=230, scrolling=True)
+
+                st.markdown("")
+
+                # ── Excess Return Table (vs SPY) ──
+                excess_port = port_ret_week - spy_ret_week
+                excess_imputed = imputed_total - spy_ret_week
+                excess_alpha = excess_port - imputed_total  # same residual, different framing
+
+                excess_rows = [
+                    {
+                        "": "Sub-Fund (Excess)",
+                        "Total Return": f"{excess_port * 100:+.3f}%",
+                        "Market β": f"{beta_map.get('Market', 0):.3f}",
+                        "Value β": f"{beta_map.get('Value', 0):.3f}",
+                        "Momentum β": f"{beta_map.get('Momentum', 0):.3f}",
+                        "Growth β": f"{beta_map.get('Growth', 0):.3f}",
+                    },
+                    {
+                        "": "SPY Return",
+                        "Total Return": f"{spy_ret_week * 100:+.3f}%",
+                        "Market β": "",
+                        "Value β": "",
+                        "Momentum β": "",
+                        "Growth β": "",
+                    },
+                    {
+                        "": "Factor Returns",
+                        "Total Return": "",
+                        "Market β": f"{factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                    },
+                    {
+                        "": "Imputed Excess Return",
+                        "Total Return": f"{excess_imputed * 100:+.3f}%",
+                        "Market β": f"{beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                    },
+                    {
+                        "": "Alpha",
+                        "Total Return": f"{excess_alpha * 100:+.3f}%",
+                        "Market β": "",
+                        "Value β": "",
+                        "Momentum β": "",
+                        "Growth β": "",
+                    },
+                ]
+                excess_df = pd.DataFrame(excess_rows)
+                st.markdown("**Excess Return (vs SPY)**")
+                st.caption(f"Week ending {last_week.strftime('%b %d, %Y')}")
+                components.html(html_table(excess_df, max_height="280px"), height=260, scrolling=True)
+            else:
+                st.info("Insufficient overlapping data for weekly attribution tables.")
 
         # ── Weekly Factor Attribution ──
         if not rets.empty:
