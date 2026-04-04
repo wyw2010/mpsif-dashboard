@@ -447,13 +447,20 @@ def list_holdings_snapshots(subfund_name: str):
     return out
 
 
+@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
+def _parse_snapshot_cached(path_str: str, mtime: float) -> pd.DataFrame:
+    """Cache key is (path, mtime) so re-parse only happens when the file changes."""
+    return parse_fidelity_positions_csv(path_str)
+
+
 def load_holdings_snapshot(subfund_name: str, friday_date) -> pd.DataFrame:
-    """Load and parse a stored snapshot. Returns an empty DataFrame if missing."""
+    """Load and parse a stored snapshot. Returns an empty DataFrame if missing.
+    Results are cached by (path, mtime) for the lifetime of the Streamlit process."""
     path = _snapshot_path(subfund_name, friday_date)
     if not path.exists():
         return pd.DataFrame()
     try:
-        return parse_fidelity_positions_csv(path)
+        return _parse_snapshot_cached(str(path), path.stat().st_mtime)
     except Exception as e:
         log.error(f"load_holdings_snapshot({subfund_name}, {friday_date}): {e}")
         return pd.DataFrame()
@@ -968,7 +975,63 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
 """
 
 # BOTTOM-UP FACTOR BETAS: Computes factor betas from individual stocks then weight to get portfolio factor betas
+def _fingerprint_series(s: pd.Series) -> str:
+    """Compact content fingerprint for a returns Series — used as a cache key."""
+    if s is None or len(s) == 0:
+        return "empty"
+    try:
+        return f"len={len(s)}|first={s.index[0]}|last={s.index[-1]}|sum={float(s.sum()):.8f}|last_val={float(s.iloc[-1]):.10f}"
+    except Exception:
+        return f"len={len(s)}"
+
+
+def _fingerprint_holdings(df: pd.DataFrame) -> str:
+    """Compact content fingerprint for a holdings DataFrame — used as a cache key.
+    Keys on (ticker, weight) pairs sorted by ticker so equivalent holdings hash equal."""
+    if df is None or df.empty:
+        return "empty"
+    ticker_col = "Ticker" if "Ticker" in df.columns else ("Symbol" if "Symbol" in df.columns else None)
+    weight_col = "Weight (%)" if "Weight (%)" in df.columns else ("Weight" if "Weight" in df.columns else None)
+    if ticker_col is None or weight_col is None:
+        return f"unknown_shape:{df.shape[0]}x{df.shape[1]}"
+    items = []
+    for _, row in df.iterrows():
+        t = str(row[ticker_col]).strip()
+        w = row[weight_col]
+        if pd.isna(w):
+            continue
+        items.append((t, round(float(w), 6)))
+    items.sort()
+    return ";".join(f"{t}:{w:.6f}" for t, w in items)
+
+
+@st.cache_data(ttl=900, show_spinner=False, max_entries=32)
+def _compute_factor_betas_impl(
+    _port_rets: pd.Series,
+    _holdings_df: pd.DataFrame,
+    start: str,
+    end: str,
+    cache_key: str,
+) -> dict:
+    """Actual bottom-up factor betas computation. Cached by cache_key (hashable
+    content fingerprint). The pandas args are prefixed with ``_`` so Streamlit
+    skips hashing them — we do it ourselves via cache_key."""
+    return _compute_factor_betas_uncached(_port_rets, _holdings_df, start, end)
+
+
 def compute_factor_betas(
+    port_rets: pd.Series,
+    holdings_df: pd.DataFrame,
+    start: str,
+    end: str,
+) -> dict:
+    """Public entrypoint — computes a content fingerprint of the pandas inputs
+    and dispatches to the cached implementation."""
+    cache_key = f"{_fingerprint_series(port_rets)}|{_fingerprint_holdings(holdings_df)}|{start}|{end}"
+    return _compute_factor_betas_impl(port_rets, holdings_df, start, end, cache_key)
+
+
+def _compute_factor_betas_uncached(
     port_rets: pd.Series,
     holdings_df: pd.DataFrame,
     start: str,
@@ -1116,7 +1179,21 @@ def compute_factor_betas(
 
     
 
+@st.cache_data(ttl=900, show_spinner=False, max_entries=16)
+def _compute_etf_factor_betas_impl(
+    _port_rets: pd.Series, start: str, end: str, cache_key: str
+) -> dict:
+    return _compute_etf_factor_betas_uncached(_port_rets, start, end)
+
+
 def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
+    """Public entrypoint — dispatches to the cached implementation using a
+    content fingerprint of port_rets as the cache key."""
+    cache_key = f"{_fingerprint_series(port_rets)}|{start}|{end}"
+    return _compute_etf_factor_betas_impl(port_rets, start, end, cache_key)
+
+
+def _compute_etf_factor_betas_uncached(port_rets: pd.Series, start: str, end: str) -> dict:
     """Regress portfolio returns on factor ETF returns (multivariate OLS)."""
     tickers = list(FACTOR_ETFS.values())
     prices = fetch_prices(tickers, start, end)
@@ -1364,8 +1441,32 @@ def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end
     return df
 """
 
-# VERSION THAT USES CONSTRUCTED FACTORS 
-def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end: str) -> pd.DataFrame:
+@st.cache_data(ttl=900, show_spinner=False, max_entries=16)
+def _weekly_factor_attribution_impl(
+    _port_rets: pd.Series, _betas: dict, start: str, end: str, cache_key: str
+) -> pd.DataFrame:
+    return _weekly_factor_attribution_uncached(_port_rets, _betas, start, end)
+
+
+def weekly_factor_attribution(
+    port_rets: pd.Series, betas: dict, start: str, end: str
+) -> pd.DataFrame:
+    """Public entrypoint — dispatches to the cached implementation."""
+    # Filter out non-hashable entries (e.g. nested dicts under "_stats") and
+    # build a stable signature from the simple scalar beta values.
+    beta_sig = ";".join(
+        f"{k}:{float(v):.6f}"
+        for k, v in sorted(betas.items())
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    )
+    cache_key = f"{_fingerprint_series(port_rets)}|{beta_sig}|{start}|{end}"
+    return _weekly_factor_attribution_impl(port_rets, betas, start, end, cache_key)
+
+
+# VERSION THAT USES CONSTRUCTED FACTORS
+def _weekly_factor_attribution_uncached(
+    port_rets: pd.Series, betas: dict, start: str, end: str
+) -> pd.DataFrame:
     # Daily factor returns from pickle
     factor_daily = pd.read_pickle('data.pk')
     factor_daily = factor_daily.rename(columns={'mkt':'Market', 'momentum':'Momentum', 'growth':'Growth', 'value':'Value'})

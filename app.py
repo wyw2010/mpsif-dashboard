@@ -1545,7 +1545,8 @@ with tabs[-1]:
                 st.markdown(f"Week ending **{_friday:%b %d, %Y}**")
             with _row_cols[1]:
                 try:
-                    _n_tickers = len(pf.parse_fidelity_positions_csv(_path))
+                    # Goes through the cached loader so we don't re-parse on every interaction
+                    _n_tickers = len(pf.load_holdings_snapshot(_fund_name, _friday))
                     st.caption(f"{_n_tickers} tickers")
                 except Exception:
                     st.caption("(parse error)")
