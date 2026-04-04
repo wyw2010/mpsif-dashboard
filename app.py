@@ -1049,14 +1049,14 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 
                 
                 # Stats table
-                # stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
-                # for fname, bval in factor_items.items():
-                #     s = stats.get(fname, {})
-                #     t = s.get("t_stat", 0.0)
-                #     p = s.get("p_value", 1.0)
-                #     stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
-                # stat_df = pd.DataFrame(stat_rows)
-                # components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
+                stat_rows = [{"Factor": "Alpha (Ann.)", "Beta": f"{alpha:.3f}", "t-stat": f"{alpha_t:.3f}", "p-value": f"{alpha_p:.3f}"}]
+                for fname, bval in factor_items.items():
+                    s = stats.get(fname, {})
+                    t = s.get("t_stat", 0.0)
+                    p = s.get("p_value", 1.0)
+                    stat_rows.append({"Factor": fname, "Beta": f"{bval:.3f}", "t-stat": f"{t:.3f}", "p-value": f"{p:.3f}"})
+                stat_df = pd.DataFrame(stat_rows)
+                components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
 
             render_factor_table(pf.compute_factor_betas(rets, holdings, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
             render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
