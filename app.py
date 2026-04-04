@@ -77,7 +77,7 @@ st.markdown(f"""
     .logo-nyu {{ color: {NYU_PURPLE}; }}
     .logo-mpsif {{ color: {BLACK}; }}
 
-    /* ── Tabs ── */
+    /* ── Tabs (legacy, kept in case of stTabs usage elsewhere) ── */
     .stTabs [data-baseweb="tab-list"] {{ gap: 0; border-bottom: 2px solid #E5E7EB; }}
     .stTabs [data-baseweb="tab"] {{
         font-size: 0.95rem; color: {GRAY};
@@ -87,6 +87,45 @@ st.markdown(f"""
         color: {NYU_PURPLE} !important;
         border-bottom-color: {NYU_PURPLE} !important;
         font-weight: 600 !important;
+    }}
+
+    /* ── Nav radio (replaces st.tabs for lazy rendering) ────────────────
+       The main nav is a plain st.radio rendered inside a <div> whose class
+       we set via a st.markdown wrapper. We target everything inside
+       .main-nav-wrapper to style only the top-level nav and leave other
+       st.radio instances untouched. */
+    .main-nav-wrapper + div div[data-testid="stRadio"] > label,
+    .main-nav-wrapper + div div[data-testid="stRadio"] label > div[data-testid="stWidgetLabel"] {{
+        display: none !important;
+    }}
+    .main-nav-wrapper + div div[role="radiogroup"] {{
+        gap: 0 !important;
+        border-bottom: 2px solid #E5E7EB !important;
+        margin-bottom: 1rem !important;
+        flex-wrap: wrap !important;
+    }}
+    .main-nav-wrapper + div div[role="radiogroup"] > label {{
+        padding: 0.75rem 1.5rem !important;
+        margin-bottom: -2px !important;
+        border-bottom: 2px solid transparent !important;
+        cursor: pointer !important;
+        color: {GRAY} !important;
+        font-size: 0.95rem !important;
+        font-weight: 500 !important;
+        transition: color 0.15s, border-color 0.15s !important;
+    }}
+    .main-nav-wrapper + div div[role="radiogroup"] > label:hover {{
+        color: {NYU_PURPLE} !important;
+    }}
+    .main-nav-wrapper + div div[role="radiogroup"] > label:has(input:checked) {{
+        color: {NYU_PURPLE} !important;
+        border-bottom-color: {NYU_PURPLE} !important;
+        font-weight: 600 !important;
+    }}
+    /* Hide the radio circles — we only want the text labels */
+    .main-nav-wrapper + div div[role="radiogroup"] input[type="radio"],
+    .main-nav-wrapper + div div[role="radiogroup"] > label > div:first-child {{
+        display: none !important;
     }}
 
     /* ── Metric cards ── */
@@ -558,15 +597,37 @@ SUBFUND_FILES = {
 }
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False, max_entries=4)
 def load_all_subfunds():
+    """Load all sub-funds in parallel. build_subfund is I/O bound (Alpaca API),
+    so threading cuts wall-clock time roughly N× for N sub-funds."""
+    import concurrent.futures
+
+    existing = [(name, path) for name, path in SUBFUND_FILES.items() if path.exists()]
+    if not existing:
+        return {}
+
     results = {}
-    for name, path in SUBFUND_FILES.items():
-        if path.exists():
-            try:
-                results[name] = pf.build_subfund(str(path))
-            except Exception as e:
-                st.warning(f"Error loading {name}: {e}")
+    errors = []
+
+    def _load_one(name_path):
+        name, path = name_path
+        try:
+            return name, pf.build_subfund(str(path)), None
+        except Exception as e:
+            return name, None, str(e)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(existing)) as executor:
+        for name, data, err in executor.map(_load_one, existing):
+            if err is not None:
+                errors.append((name, err))
+            elif data is not None:
+                results[name] = data
+
+    # Surface any errors on the main thread (st.* from worker threads is unsafe)
+    for name, err in errors:
+        st.warning(f"Error loading {name}: {err}")
+
     return results
 
 
@@ -708,15 +769,24 @@ with hdr2:
         st.cache_data.clear()
         st.rerun()
 
-# ── Tabs (always show all) ────────────────────────────────────────────────
+# ── Tabs (radio-based so only the active tab body runs — huge speedup) ────
 tab_names = ["Overview"] + pf.SUBFUNDS + ["Upload"]
-tabs = st.tabs(tab_names)
+# A zero-height wrapper div whose class we use as a CSS sibling selector
+# to style only the main nav radio and not other st.radio widgets.
+st.markdown('<div class="main-nav-wrapper"></div>', unsafe_allow_html=True)
+active_tab = st.radio(
+    "Navigation",
+    tab_names,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_nav_tab",
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  OVERVIEW TAB
 # ═══════════════════════════════════════════════════════════════════════════
-with tabs[0]:
+if active_tab == "Overview":
     if not subfund_data:
         st.info("No transaction data loaded for any sub-fund yet.")
     else:
@@ -846,8 +916,11 @@ with tabs[0]:
 # ═══════════════════════════════════════════════════════════════════════════
 #  SUB-FUND TABS
 # ═══════════════════════════════════════════════════════════════════════════
-for idx, name in enumerate(pf.SUBFUNDS):
-    with tabs[idx + 1]:
+# Only render the currently active sub-fund. This is the biggest speedup:
+# under st.tabs the original for-loop body ran for every sub-fund on every
+# script rerun, doing ~4× the work per interaction.
+for name in ([active_tab] if active_tab in pf.SUBFUNDS else []):
+    if True:  # one-indent wrapper so the existing `continue` statements still work
         if name not in subfund_data:
             st.info(f"No transaction data available for **{name}**. Provide the Fidelity CSV to load this sub-fund.")
             continue
@@ -1440,7 +1513,7 @@ SUBFUND_FILE_MAP = {
     "Fixed Income": "fixed_income.csv",
 }
 
-with tabs[-1]:
+if active_tab == "Upload":
     st.markdown('<div class="section-header">Upload Transaction Report</div>', unsafe_allow_html=True)
     st.markdown(
         "Upload your **Fidelity CSV export** to update a sub-fund's transaction history. "

@@ -481,21 +481,54 @@ PRICE_CACHE_PATH = _DATA_DIR / "price_cache.csv"
 _ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks/bars"
 
 
+@st.cache_resource
+def _price_cache_holder() -> dict:
+    """Shared mutable container for the in-memory price cache.
+    Using a dict so both the app process and all user sessions see the
+    same DataFrame without re-reading from disk every call.
+
+    Uses ``@st.cache_resource`` (not ``cache_data``) because we want a
+    single shared mutable object rather than per-key memoization.
+    """
+    holder = {"df": pd.DataFrame(), "loaded": False}
+    return holder
+
+
 def _load_price_cache() -> pd.DataFrame:
-    if PRICE_CACHE_PATH.exists():
-        try:
-            df = pd.read_csv(PRICE_CACHE_PATH, index_col=0, parse_dates=True)
-            if df.empty:
-                return pd.DataFrame()
-            return df
-        except Exception:
-            pass
-    return pd.DataFrame()
+    """Return the in-memory price cache, lazily populating it from disk
+    on first call. Callers should treat the returned DataFrame as read-only
+    — use ``_save_price_cache`` to update it."""
+    holder = _price_cache_holder()
+    if not holder["loaded"]:
+        if PRICE_CACHE_PATH.exists():
+            try:
+                df = pd.read_csv(PRICE_CACHE_PATH, index_col=0, parse_dates=True)
+                # Cast to float32 — price data doesn't need float64 precision
+                # and this halves the memory footprint of the cache.
+                if not df.empty:
+                    df = df.astype("float32")
+                holder["df"] = df if not df.empty else pd.DataFrame()
+            except Exception:
+                holder["df"] = pd.DataFrame()
+        holder["loaded"] = True
+        log.info(
+            f"  Price cache loaded from disk: "
+            f"{len(holder['df'].columns)} tickers, {len(holder['df'])} rows"
+        )
+    return holder["df"]
 
 
 def _save_price_cache(df: pd.DataFrame):
+    """Persist the price cache to disk AND update the in-memory holder
+    so all subsequent callers see the new state."""
     PRICE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(PRICE_CACHE_PATH)
+    # Update the shared in-memory holder so the next _load_price_cache()
+    # call returns the fresh frame instead of the stale one.
+    holder = _price_cache_holder()
+    # Ensure the in-memory copy is also float32 for consistency
+    holder["df"] = df.astype("float32") if not df.empty else pd.DataFrame()
+    holder["loaded"] = True
 
 
 def _fetch_alpaca_batch(tickers: list, start: str, end: str) -> pd.DataFrame:
@@ -533,7 +566,9 @@ def _fetch_alpaca_batch(tickers: list, start: str, end: str) -> pd.DataFrame:
     df = pd.DataFrame(all_bars)
     df["date"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None).dt.normalize()
     pivot = df.pivot_table(index="date", columns="symbol", values="close")
-    return pivot
+    # Cast to float32 — price data doesn't need float64 precision and this
+    # halves the memory footprint across cache, compute, and UI layers.
+    return pivot.astype("float32")
 
 
 _ALPACA_SNAPSHOT_URL = "https://data.alpaca.markets/v2/stocks/snapshots"
@@ -626,7 +661,10 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
     if not available:
         log.warning(f"  No price data available for any requested tickers")
         return pd.DataFrame()
-    result = cache[available].loc[start:end]
+    # .copy() is important — the cache is now a shared in-memory object
+    # (@st.cache_resource), so we must not mutate it via the live-price
+    # overlay below.
+    result = cache[available].loc[start:end].copy()
 
     # ── Live intraday overlay ──
     # During market hours, fetch real-time prices and add/update today's row
@@ -1838,18 +1876,18 @@ def build_subfund(csv_path: str):
     log.info(f"  Portfolio: {len(rets)} return days, {len(holdings)} current holdings")
     log.info(f"═══ build_subfund DONE: {csv_path} ═══")
 
+    # Only include fields that app.py actually reads. Dropping txns,
+    # daily_positions, prices, tickers, initial_cash from the cached
+    # result saves substantial memory per sub-fund (txns alone is a full
+    # DataFrame; daily_positions is a dict of dicts spanning every
+    # business day).
     return {
-        "txns": txns,
         "dividends": dividends,
-        "daily_positions": daily_pos,
-        "prices": prices,
         "portfolio_values": port_val,
         "ticker_values": tv,
         "returns": rets,
         "holdings": holdings,
         "avg_costs": avg_costs,
-        "tickers": tickers,
         "first_date": first_buy,
         "end_date": end_date,
-        "initial_cash": initial_cash,
     }
