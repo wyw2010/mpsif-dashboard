@@ -1057,7 +1057,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 stat_df = pd.DataFrame(stat_rows)
                 components.html(html_table(stat_df, max_height="250px"), height=min(250, 40 * len(stat_df) + 55), scrolling=True)
 
-            render_factor_table(pf.compute_factor_betas(rets, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
+            render_factor_table(pf.compute_factor_betas(rets, holdings, start_str, end_str), "Factor Exposure (Fama-French)", f"ff_{name}")
             render_factor_table(pf.compute_etf_factor_betas(rets, start_str, end_str), "Factor Exposure (ETF Proxies)", f"etf_{name}")
 
         # ── Weekly Factor Attribution ──
@@ -1126,7 +1126,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                         stock_rets = stock_prices[ticker].pct_change().dropna()
                         if len(stock_rets) < 10:
                             continue
-                        ff = pf.compute_factor_betas(stock_rets, start_str, end_str)
+                        ff = pf.compute_factor_betas(stock_rets, holdings = pd.DataFrame([{"Ticker": ticker, "Weight (%)": 100.0}]), start_str, end_str)
                         etf = pf.compute_etf_factor_betas(stock_rets, start_str, end_str)
 
                         def _build_row(result, ticker):
