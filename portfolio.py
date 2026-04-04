@@ -298,6 +298,177 @@ def save_bond_prices(data: dict):
     log.info(f"  Saved bond prices for {len(data)} CUSIPs to {BOND_PRICE_PATH}")
 
 
+# ── Holdings snapshots (Fidelity "Portfolio Positions" exports) ──────────
+# Uploaded per (sub-fund, Friday) — used to override the reconstructed
+# holdings weights in the Weekly Return Attribution section for that
+# specific week. Files persist on the DATA_DIR disk across redeploys.
+HOLDINGS_SNAPSHOT_DIR = _DATA_DIR / "holdings_snapshots"
+
+
+def _subfund_slug(subfund_name: str) -> str:
+    """Match the convention used for transaction CSVs (e.g. 'Fixed Income' → 'fixed_income')."""
+    return subfund_name.strip().lower().replace(" ", "_")
+
+
+def _snapshot_path(subfund_name: str, friday_date) -> Path:
+    friday = pd.Timestamp(friday_date).normalize()
+    slug = _subfund_slug(subfund_name)
+    return HOLDINGS_SNAPSHOT_DIR / f"{slug}_positions_{friday:%Y-%m-%d}.csv"
+
+
+def _clean_money(val) -> float:
+    """Strip $ , and convert to float. Returns 0.0 on failure."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return 0.0
+    s = str(val).strip().replace("$", "").replace(",", "").replace("+", "")
+    if not s or s in {"-", "--", "N/A"}:
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _clean_percent(val) -> float:
+    """Strip % and convert to float. Returns 0.0 on failure."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return 0.0
+    s = str(val).strip().replace("%", "").replace("+", "")
+    if not s or s in {"-", "--", "N/A"}:
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def parse_fidelity_positions_csv(file_or_path) -> pd.DataFrame:
+    """Parse a Fidelity "Portfolio_Positions" CSV export into a holdings DataFrame.
+
+    Accepts either a filesystem path (str/Path) or a file-like object
+    (e.g. a Streamlit ``UploadedFile``). Returns a DataFrame with columns
+    matching the reconstructed holdings shape: ``Ticker``, ``Shares``,
+    ``Price ($)``, ``Value ($)``, ``Weight (%)``, ``Avg Cost ($)``.
+
+    - Skips the SPAXX money-market row (cash)
+    - Skips "Pending activity" rows
+    - Skips rows with empty/missing Symbol (disclaimer lines)
+    - Keeps SPY and any other equity tickers
+    """
+    try:
+        # index_col=False is important — Fidelity exports have a trailing
+        # comma on data rows which tricks pandas into using the first column
+        # as an index, shifting every subsequent column by one.
+        df = pd.read_csv(file_or_path, on_bad_lines="skip", index_col=False)
+    except Exception as e:
+        log.error(f"parse_fidelity_positions_csv: could not read CSV: {e}")
+        raise
+
+    # Column aliases — Fidelity sometimes tweaks the header names
+    def _col(name_frag: str):
+        for c in df.columns:
+            if name_frag.lower() in str(c).lower():
+                return c
+        return None
+
+    sym_col = _col("Symbol")
+    qty_col = _col("Quantity")
+    price_col = _col("Last Price")
+    value_col = _col("Current Value")
+    weight_col = _col("Percent Of Account")
+    avgcost_col = _col("Average Cost Basis")
+
+    if sym_col is None:
+        raise ValueError("Could not find Symbol column in positions CSV")
+
+    recs = []
+    for _, row in df.iterrows():
+        sym = str(row[sym_col]).strip() if pd.notna(row[sym_col]) else ""
+        if not sym:
+            continue
+        # Skip cash (money market), pending activity, and obvious non-position rows
+        if sym.upper().startswith("SPAXX") or sym.lower().startswith("pending"):
+            continue
+        if sym.lower() in {"nan", "none"}:
+            continue
+
+        shares = _clean_money(row[qty_col]) if qty_col else 0.0
+        price = _clean_money(row[price_col]) if price_col else 0.0
+        value = _clean_money(row[value_col]) if value_col else 0.0
+        weight = _clean_percent(row[weight_col]) if weight_col else 0.0
+        avg_cost = _clean_money(row[avgcost_col]) if avgcost_col else 0.0
+
+        # Must have something resembling a position
+        if value <= 0 and shares <= 0:
+            continue
+
+        recs.append({
+            "Ticker": sym,
+            "Shares": round(shares, 3),
+            "Price ($)": round(price, 2),
+            "Value ($)": round(value, 2),
+            "Weight (%)": round(weight, 3),
+            "Avg Cost ($)": round(avg_cost, 2),
+        })
+
+    if not recs:
+        return pd.DataFrame(columns=["Ticker", "Shares", "Price ($)", "Value ($)", "Weight (%)", "Avg Cost ($)"])
+
+    return pd.DataFrame(recs).sort_values("Value ($)", ascending=False).reset_index(drop=True)
+
+
+def save_holdings_snapshot(subfund_name: str, friday_date, file_bytes: bytes) -> Path:
+    """Save the raw uploaded positions CSV to the persistent disk.
+    Returns the saved path. Overwrites any existing snapshot for that (subfund, friday)."""
+    HOLDINGS_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    path = _snapshot_path(subfund_name, friday_date)
+    path.write_bytes(file_bytes)
+    log.info(f"  Saved holdings snapshot: {path}")
+    return path
+
+
+def list_holdings_snapshots(subfund_name: str):
+    """Return a list of (friday_date, path) tuples for this sub-fund, newest first."""
+    if not HOLDINGS_SNAPSHOT_DIR.exists():
+        return []
+    slug = _subfund_slug(subfund_name)
+    prefix = f"{slug}_positions_"
+    out = []
+    for p in HOLDINGS_SNAPSHOT_DIR.iterdir():
+        if not p.is_file() or not p.name.startswith(prefix) or not p.name.endswith(".csv"):
+            continue
+        date_str = p.name[len(prefix):-len(".csv")]
+        try:
+            d = pd.Timestamp(date_str)
+        except Exception:
+            continue
+        out.append((d, p))
+    out.sort(key=lambda x: x[0], reverse=True)
+    return out
+
+
+def load_holdings_snapshot(subfund_name: str, friday_date) -> pd.DataFrame:
+    """Load and parse a stored snapshot. Returns an empty DataFrame if missing."""
+    path = _snapshot_path(subfund_name, friday_date)
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return parse_fidelity_positions_csv(path)
+    except Exception as e:
+        log.error(f"load_holdings_snapshot({subfund_name}, {friday_date}): {e}")
+        return pd.DataFrame()
+
+
+def delete_holdings_snapshot(subfund_name: str, friday_date) -> bool:
+    """Delete a stored snapshot. Returns True if a file was removed."""
+    path = _snapshot_path(subfund_name, friday_date)
+    if path.exists():
+        path.unlink()
+        log.info(f"  Deleted holdings snapshot: {path}")
+        return True
+    return False
+
+
 # ── 3. Prices (Alpaca Market Data REST + file cache) ─────────────────────
 PRICE_CACHE_PATH = _DATA_DIR / "price_cache.csv"
 _ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks/bars"

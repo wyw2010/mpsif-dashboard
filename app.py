@@ -1074,37 +1074,49 @@ for idx, name in enumerate(pf.SUBFUNDS):
             spy_daily.index = pd.to_datetime(spy_daily.index).normalize()
             spy_weekly = (1 + spy_daily).resample("W-FRI").prod() - 1 if not spy_daily.empty else pd.Series(dtype=float)
 
-            # Extract betas from the saved copy
-            beta_map = {}
             factor_names = ['Market', 'Momentum', 'Growth', 'Value']
-            for fname in factor_names:
-                for key, val in ff_betas_copy.items():
-                    if key.startswith("_"):
-                        continue
-                    if fname.lower() in key.lower():
-                        beta_map[fname] = val
-                        break
 
-            # Get last week
-            common_dates = port_weekly.index.intersection(factor_weekly.index)
-            if len(common_dates) > 0:
-                last_week = common_dates[-1]
-                port_ret_week = port_weekly.loc[last_week]
-                factor_rets_week = {f: factor_weekly.loc[last_week, f] for f in factor_names if f in factor_weekly.columns}
-                spy_ret_week = spy_weekly.loc[last_week] if last_week in spy_weekly.index else 0.0
+            def _extract_beta_map(betas_dict):
+                """Pull Market/Momentum/Growth/Value betas out of a compute_factor_betas result."""
+                bm = {}
+                for fname in factor_names:
+                    for key, val in betas_dict.items():
+                        if key.startswith("_"):
+                            continue
+                        if fname.lower() in key.lower():
+                            bm[fname] = val
+                            break
+                return bm
+
+            def _render_weekly_attribution_block(friday, holdings_for_week, label):
+                """Render Absolute Return + Excess Return tables for a single week."""
+                if friday not in port_weekly.index or friday not in factor_weekly.index:
+                    st.info(
+                        f"⚠️ {label} — no factor/return data available for week ending "
+                        f"{friday:%b %d, %Y}. Skipping."
+                    )
+                    return
+
+                # Compute bottom-up betas using the holdings for this specific week
+                week_result = pf.compute_factor_betas(rets, holdings_for_week, start_str, end_str)
+                week_beta_map = _extract_beta_map(week_result)
+
+                port_ret_week = port_weekly.loc[friday]
+                factor_rets_week = {f: factor_weekly.loc[friday, f] for f in factor_names if f in factor_weekly.columns}
+                spy_ret_week = spy_weekly.loc[friday] if friday in spy_weekly.index else 0.0
 
                 # ── Absolute Return Table ──
-                imputed_total = sum(beta_map.get(f, 0) * factor_rets_week.get(f, 0) for f in factor_names)
+                imputed_total = sum(week_beta_map.get(f, 0) * factor_rets_week.get(f, 0) for f in factor_names)
                 alpha_residual = port_ret_week - imputed_total
 
                 abs_rows = [
                     {
                         "": "Sub-Fund",
                         "Total Return": f"{port_ret_week * 100:+.3f}%",
-                        "Market β": f"{beta_map.get('Market', 0):.3f}",
-                        "Value β": f"{beta_map.get('Value', 0):.3f}",
-                        "Momentum β": f"{beta_map.get('Momentum', 0):.3f}",
-                        "Growth β": f"{beta_map.get('Growth', 0):.3f}",
+                        "Market β": f"{week_beta_map.get('Market', 0):.3f}",
+                        "Value β": f"{week_beta_map.get('Value', 0):.3f}",
+                        "Momentum β": f"{week_beta_map.get('Momentum', 0):.3f}",
+                        "Growth β": f"{week_beta_map.get('Growth', 0):.3f}",
                     },
                     {
                         "": "Factor Returns",
@@ -1117,10 +1129,10 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     {
                         "": "Imputed Return",
                         "Total Return": f"{imputed_total * 100:+.3f}%",
-                        "Market β": f"{beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
-                        "Value β": f"{beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
-                        "Momentum β": f"{beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-                        "Growth β": f"{beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                        "Market β": f"{week_beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{week_beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{week_beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{week_beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
                     },
                     {
                         "": "Alpha",
@@ -1133,7 +1145,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 ]
                 abs_df = pd.DataFrame(abs_rows)
                 st.markdown("**Absolute Return**")
-                st.caption(f"Week ending {last_week.strftime('%b %d, %Y')}")
+                st.caption(label)
                 components.html(html_table(abs_df, max_height="250px"), height=230, scrolling=True)
 
                 st.markdown("")
@@ -1147,10 +1159,10 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     {
                         "": "Sub-Fund (Excess)",
                         "Total Return": f"{excess_port * 100:+.3f}%",
-                        "Market β": f"{beta_map.get('Market', 0):.3f}",
-                        "Value β": f"{beta_map.get('Value', 0):.3f}",
-                        "Momentum β": f"{beta_map.get('Momentum', 0):.3f}",
-                        "Growth β": f"{beta_map.get('Growth', 0):.3f}",
+                        "Market β": f"{week_beta_map.get('Market', 0):.3f}",
+                        "Value β": f"{week_beta_map.get('Value', 0):.3f}",
+                        "Momentum β": f"{week_beta_map.get('Momentum', 0):.3f}",
+                        "Growth β": f"{week_beta_map.get('Growth', 0):.3f}",
                     },
                     {
                         "": "SPY Return",
@@ -1171,10 +1183,10 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     {
                         "": "Imputed Excess Return",
                         "Total Return": f"{excess_imputed * 100:+.3f}%",
-                        "Market β": f"{beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
-                        "Value β": f"{beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
-                        "Momentum β": f"{beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-                        "Growth β": f"{beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                        "Market β": f"{week_beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{week_beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{week_beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{week_beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
                     },
                     {
                         "": "Alpha",
@@ -1187,10 +1199,35 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 ]
                 excess_df = pd.DataFrame(excess_rows)
                 st.markdown("**Excess Return (vs SPY)**")
-                st.caption(f"Week ending {last_week.strftime('%b %d, %Y')}")
+                st.caption(label)
                 components.html(html_table(excess_df, max_height="280px"), height=260, scrolling=True)
+
+            # Decide which week(s) to render:
+            # 1. If uploaded snapshots exist → render one block per snapshot (newest first)
+            # 2. Otherwise → fall back to the latest reconstructed week with reconstructed holdings
+            snapshots = pf.list_holdings_snapshots(name)
+            if snapshots:
+                for _idx, (_friday, _path) in enumerate(snapshots):
+                    try:
+                        _snap_df = pf.load_holdings_snapshot(name, _friday)
+                    except Exception as e:
+                        st.error(f"Could not load snapshot for {_friday:%b %d, %Y}: {e}")
+                        continue
+                    if _snap_df.empty:
+                        st.info(f"Snapshot for {_friday:%b %d, %Y} is empty or unreadable.")
+                        continue
+                    _label = f"Week ending {_friday.strftime('%b %d, %Y')} · uploaded snapshot ({len(_snap_df)} tickers)"
+                    _render_weekly_attribution_block(_friday, _snap_df, _label)
+                    if _idx < len(snapshots) - 1:
+                        st.markdown("<hr style='margin: 1.5rem 0; border: none; border-top: 1px solid #E5E7EB;'>", unsafe_allow_html=True)
             else:
-                st.info("Insufficient overlapping data for weekly attribution tables.")
+                common_dates = port_weekly.index.intersection(factor_weekly.index)
+                if len(common_dates) > 0:
+                    last_week = common_dates[-1]
+                    _label = f"Week ending {last_week.strftime('%b %d, %Y')} · reconstructed holdings"
+                    _render_weekly_attribution_block(last_week, holdings, _label)
+                else:
+                    st.info("Insufficient overlapping data for weekly attribution tables.")
 
         # ── Weekly Factor Attribution ──
         if not rets.empty:
@@ -1434,6 +1471,91 @@ with tabs[-1]:
                 st.rerun()
         except Exception as e:
             st.error(f"Error reading file: {e}")
+
+    # ── Holdings Snapshot Upload ──
+    st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Upload Historical Holdings Snapshot</div>', unsafe_allow_html=True)
+    st.markdown(
+        "Upload a **Fidelity Portfolio Positions** CSV for a specific Friday. "
+        "This snapshot will be used as the holdings weights when computing the "
+        "**Weekly Return Attribution** tables for that week. It does not affect "
+        "any other section of the dashboard."
+    )
+
+    # Default to the most recent Friday (today if today is Fri, else the last Fri)
+    _today_pd = pd.Timestamp.now().normalize()
+    _days_since_friday = (_today_pd.weekday() - 4) % 7
+    _default_friday = (_today_pd - pd.Timedelta(days=_days_since_friday)).date()
+
+    snap_fund = st.selectbox(
+        "Select Sub-Fund",
+        list(SUBFUND_FILE_MAP.keys()),
+        key="snap_fund",
+    )
+    snap_date = st.date_input(
+        "Friday Date",
+        value=_default_friday,
+        key="snap_date",
+        help="The Friday that closes the week these holdings represent. Must be a Friday.",
+    )
+    snap_file = st.file_uploader(
+        "Upload Positions CSV",
+        type=["csv"],
+        key="upload_positions_csv",
+        help="Export your current Portfolio Positions from Fidelity and upload the CSV here.",
+    )
+
+    if snap_file is not None:
+        try:
+            # Parse to preview
+            snap_bytes = snap_file.read()
+            snap_file.seek(0)
+            import io as _io
+            parsed_preview = pf.parse_fidelity_positions_csv(_io.BytesIO(snap_bytes))
+            st.markdown(f"**Preview** — {len(parsed_preview)} tickers, weights sum to **{parsed_preview['Weight (%)'].sum():.2f}%**")
+            st.dataframe(parsed_preview.head(10), use_container_width=True, hide_index=True, height=300)
+
+            if st.button("✅ Save Snapshot", key="snap_save", type="primary"):
+                friday_ts = pd.Timestamp(snap_date)
+                if friday_ts.weekday() != 4:
+                    st.error(f"❌ {friday_ts:%Y-%m-%d} is a {friday_ts:%A}, not a Friday. Please pick a Friday.")
+                elif parsed_preview.empty:
+                    st.error("❌ Could not parse any positions from the uploaded file.")
+                else:
+                    pf.save_holdings_snapshot(snap_fund, friday_ts, snap_bytes)
+                    st.cache_data.clear()
+                    st.success(f"✅ Saved **{snap_fund}** snapshot for week ending **{friday_ts:%b %d, %Y}** ({len(parsed_preview)} tickers). Refreshing…")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"Error parsing positions CSV: {e}")
+
+    # Existing snapshots list
+    st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+    st.markdown("**Existing Snapshots**")
+    any_snapshots = False
+    for _fund_name in SUBFUND_FILE_MAP.keys():
+        _snaps = pf.list_holdings_snapshots(_fund_name)
+        if not _snaps:
+            continue
+        any_snapshots = True
+        st.markdown(f"*{_fund_name}*")
+        for _friday, _path in _snaps:
+            _row_cols = st.columns([3, 2, 1])
+            with _row_cols[0]:
+                st.markdown(f"Week ending **{_friday:%b %d, %Y}**")
+            with _row_cols[1]:
+                try:
+                    _n_tickers = len(pf.parse_fidelity_positions_csv(_path))
+                    st.caption(f"{_n_tickers} tickers")
+                except Exception:
+                    st.caption("(parse error)")
+            with _row_cols[2]:
+                if st.button("🗑 Delete", key=f"snap_del_{_fund_name}_{_friday:%Y%m%d}"):
+                    pf.delete_holdings_snapshot(_fund_name, _friday)
+                    st.cache_data.clear()
+                    st.rerun()
+    if not any_snapshots:
+        st.caption("_No snapshots uploaded yet._")
 
 
 # ── Footer ────────────────────────────────────────────────────────────────
