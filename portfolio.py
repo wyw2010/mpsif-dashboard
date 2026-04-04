@@ -800,7 +800,6 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
 def compute_factor_betas_bottomup(
     port_rets: pd.Series,
     holdings_df: pd.DataFrame,
-    theme_map: dict,
     start: str,
     end: str,
 ) -> dict:
