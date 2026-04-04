@@ -77,7 +77,7 @@ st.markdown(f"""
     .logo-nyu {{ color: {NYU_PURPLE}; }}
     .logo-mpsif {{ color: {BLACK}; }}
 
-    /* ── Tabs (legacy, kept in case of stTabs usage elsewhere) ── */
+    /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {{ gap: 0; border-bottom: 2px solid #E5E7EB; }}
     .stTabs [data-baseweb="tab"] {{
         font-size: 0.95rem; color: {GRAY};
@@ -87,45 +87,6 @@ st.markdown(f"""
         color: {NYU_PURPLE} !important;
         border-bottom-color: {NYU_PURPLE} !important;
         font-weight: 600 !important;
-    }}
-
-    /* ── Nav radio (replaces st.tabs for lazy rendering) ────────────────
-       The main nav is a plain st.radio rendered inside a <div> whose class
-       we set via a st.markdown wrapper. We target everything inside
-       .main-nav-wrapper to style only the top-level nav and leave other
-       st.radio instances untouched. */
-    .main-nav-wrapper + div div[data-testid="stRadio"] > label,
-    .main-nav-wrapper + div div[data-testid="stRadio"] label > div[data-testid="stWidgetLabel"] {{
-        display: none !important;
-    }}
-    .main-nav-wrapper + div div[role="radiogroup"] {{
-        gap: 0 !important;
-        border-bottom: 2px solid #E5E7EB !important;
-        margin-bottom: 1rem !important;
-        flex-wrap: wrap !important;
-    }}
-    .main-nav-wrapper + div div[role="radiogroup"] > label {{
-        padding: 0.75rem 1.5rem !important;
-        margin-bottom: -2px !important;
-        border-bottom: 2px solid transparent !important;
-        cursor: pointer !important;
-        color: {GRAY} !important;
-        font-size: 0.95rem !important;
-        font-weight: 500 !important;
-        transition: color 0.15s, border-color 0.15s !important;
-    }}
-    .main-nav-wrapper + div div[role="radiogroup"] > label:hover {{
-        color: {NYU_PURPLE} !important;
-    }}
-    .main-nav-wrapper + div div[role="radiogroup"] > label:has(input:checked) {{
-        color: {NYU_PURPLE} !important;
-        border-bottom-color: {NYU_PURPLE} !important;
-        font-weight: 600 !important;
-    }}
-    /* Hide the radio circles — we only want the text labels */
-    .main-nav-wrapper + div div[role="radiogroup"] input[type="radio"],
-    .main-nav-wrapper + div div[role="radiogroup"] > label > div:first-child {{
-        display: none !important;
     }}
 
     /* ── Metric cards ── */
@@ -769,24 +730,15 @@ with hdr2:
         st.cache_data.clear()
         st.rerun()
 
-# ── Tabs (radio-based so only the active tab body runs — huge speedup) ────
+# ── Tabs (always show all) ────────────────────────────────────────────────
 tab_names = ["Overview"] + pf.SUBFUNDS + ["Upload"]
-# A zero-height wrapper div whose class we use as a CSS sibling selector
-# to style only the main nav radio and not other st.radio widgets.
-st.markdown('<div class="main-nav-wrapper"></div>', unsafe_allow_html=True)
-active_tab = st.radio(
-    "Navigation",
-    tab_names,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_nav_tab",
-)
+tabs = st.tabs(tab_names)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  OVERVIEW TAB
 # ═══════════════════════════════════════════════════════════════════════════
-if active_tab == "Overview":
+with tabs[0]:
     if not subfund_data:
         st.info("No transaction data loaded for any sub-fund yet.")
     else:
@@ -916,11 +868,8 @@ if active_tab == "Overview":
 # ═══════════════════════════════════════════════════════════════════════════
 #  SUB-FUND TABS
 # ═══════════════════════════════════════════════════════════════════════════
-# Only render the currently active sub-fund. This is the biggest speedup:
-# under st.tabs the original for-loop body ran for every sub-fund on every
-# script rerun, doing ~4× the work per interaction.
-for name in ([active_tab] if active_tab in pf.SUBFUNDS else []):
-    if True:  # one-indent wrapper so the existing `continue` statements still work
+for idx, name in enumerate(pf.SUBFUNDS):
+    with tabs[idx + 1]:
         if name not in subfund_data:
             st.info(f"No transaction data available for **{name}**. Provide the Fidelity CSV to load this sub-fund.")
             continue
@@ -1513,7 +1462,7 @@ SUBFUND_FILE_MAP = {
     "Fixed Income": "fixed_income.csv",
 }
 
-if active_tab == "Upload":
+with tabs[-1]:
     st.markdown('<div class="section-header">Upload Transaction Report</div>', unsafe_allow_html=True)
     st.markdown(
         "Upload your **Fidelity CSV export** to update a sub-fund's transaction history. "
