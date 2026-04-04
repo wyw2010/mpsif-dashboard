@@ -797,7 +797,7 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
 """
 
 # BOTTOM-UP FACTOR BETAS: Computes factor betas from individual stocks then weight to get portfolio factor betas
-def compute_factor_betas_bottomup(
+def compute_factor_betas(
     port_rets: pd.Series,
     holdings_df: pd.DataFrame,
     start: str,
