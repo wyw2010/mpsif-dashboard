@@ -1126,7 +1126,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                         stock_rets = stock_prices[ticker].pct_change().dropna()
                         if len(stock_rets) < 10:
                             continue
-                        ff = pf.compute_factor_betas(stock_rets, holdings = pd.DataFrame([{"Ticker": ticker, "Weight (%)": 100.0}]), start_str, end_str)
+                        ff = pf.compute_factor_betas(stock_rets, pd.DataFrame([{"Ticker": ticker, "Weight (%)": 100.0}]), start_str, end_str)
                         etf = pf.compute_etf_factor_betas(stock_rets, start_str, end_str)
 
                         def _build_row(result, ticker):
