@@ -672,14 +672,15 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
         live = _fetch_live_prices(available)
         if live:
             today_row = pd.DataFrame(
-                {t: [live.get(t, np.nan)] for t in available},
+                {t: [np.float32(live.get(t, np.nan))] for t in available},
                 index=[today],
             )
             if today in result.index:
-                # Update today's row with live prices
+                # Update today's row with live prices (cast to float32 to
+                # avoid pandas silently upcasting the column to float64)
                 for t, p in live.items():
                     if t in result.columns:
-                        result.at[today, t] = p
+                        result.at[today, t] = np.float32(p)
             else:
                 result = pd.concat([result, today_row])
             log.info(f"  Live prices overlaid for {len(live)} tickers at {today.date()}")
