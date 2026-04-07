@@ -1090,11 +1090,13 @@ for idx, name in enumerate(pf.SUBFUNDS):
             # Factor weekly returns
             factor_weekly = (1 + factor_data).resample("W-FRI").prod() - 1
 
-            # SPY weekly returns for excess return table
-            spy_prices = pf.fetch_prices(["SPY"], start_str, end_str)
-            spy_daily = spy_prices["SPY"].pct_change().dropna() if "SPY" in spy_prices.columns else pd.Series(dtype=float)
+            # Benchmark weekly returns for excess return table
+            _bench_ticker = "IWV" if name == "Opportunistic" else "SPY"
+            _bench_prices = pf.fetch_prices([_bench_ticker], start_str, end_str)
+            spy_daily = _bench_prices[_bench_ticker].pct_change().dropna() if _bench_ticker in _bench_prices.columns else pd.Series(dtype=float)
             spy_daily.index = pd.to_datetime(spy_daily.index).normalize()
             spy_weekly = (1 + spy_daily).resample("W-FRI").prod() - 1 if not spy_daily.empty else pd.Series(dtype=float)
+            _bench_label = f"vs {_bench_ticker}"
 
             factor_names = ['Market', 'Momentum', 'Growth', 'Value']
 
@@ -1203,7 +1205,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                         "Growth β": f"{week_beta_map_excess.get('Growth', 0):.3f}",
                     },
                     {
-                        "": "SPY Return",
+                        "": f"{_bench_ticker} Return",
                         "Total Return": f"{spy_ret_week * 100:+.3f}%",
                         "Market β": "",
                         "Value β": "",
@@ -1236,7 +1238,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     },
                 ]
                 excess_df = pd.DataFrame(excess_rows)
-                st.markdown("**Excess Return (vs SPY)**")
+                st.markdown(f"**Excess Return ({_bench_label})**")
                 st.caption(label)
                 components.html(html_table(excess_df, max_height="280px"), height=260, scrolling=True)
 
