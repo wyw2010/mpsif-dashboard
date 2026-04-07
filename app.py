@@ -1077,7 +1077,7 @@ for idx, name in enumerate(pf.SUBFUNDS):
             st.markdown('<div class="section-header">Weekly Return Attribution</div>', unsafe_allow_html=True)
 
             # Load factor data
-            factor_data = pd.read_pickle('data.pk')
+            factor_data = pd.read_parquet('data.parquet')
             factor_data.index = pd.to_datetime(factor_data.index).normalize()
             factor_data = factor_data.rename(columns={'mkt': 'Market', 'momentum': 'Momentum', 'growth': 'Growth', 'value': 'Value'})
 
