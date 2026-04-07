@@ -1123,6 +1123,22 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 week_result = pf.compute_factor_betas(rets, holdings_for_week, start_str, end_str)
                 week_beta_map = _extract_beta_map(week_result)
 
+                # Excess return betas: regress (portfolio - SPY) directly on factors
+                excess_port = port_clean - spy_daily
+                excess_port = excess_port.dropna()
+                _factor_data_excess = factor_data.copy()
+                _aligned_excess = pd.concat(
+                    [excess_port.rename("port"), _factor_data_excess],
+                    axis=1
+                ).dropna()
+                week_beta_map_excess = {f: 0.0 for f in factor_names}
+                if len(_aligned_excess) >= 10:
+                    _y = _aligned_excess["port"].values.astype(np.float64)
+                    _X = _aligned_excess[factor_names].values.astype(np.float64)
+                    _X = np.column_stack([np.ones(len(_X)), _X])
+                    _coeffs, _, _, _ = np.linalg.lstsq(_X, _y, rcond=None)
+                    week_beta_map_excess = {f: float(_coeffs[i + 1]) for i, f in enumerate(factor_names)}
+
                 port_ret_week = port_weekly.loc[friday]
                 factor_rets_week = {f: factor_weekly.loc[friday, f] for f in factor_names if f in factor_weekly.columns}
                 spy_ret_week = spy_weekly.loc[friday] if friday in spy_weekly.index else 0.0
@@ -1173,18 +1189,18 @@ for idx, name in enumerate(pf.SUBFUNDS):
                 st.markdown("")
 
                 # ── Excess Return Table (vs SPY) ──
-                excess_port = port_ret_week - spy_ret_week
-                excess_imputed = imputed_total - spy_ret_week
-                excess_alpha = excess_port - imputed_total  # same residual, different framing
+                excess_port_week = port_ret_week - spy_ret_week
+                excess_imputed = sum(week_beta_map_excess.get(f, 0) * factor_rets_week.get(f, 0) for f in factor_names)
+                excess_alpha = excess_port_week - excess_imputed
 
                 excess_rows = [
                     {
                         "": "Sub-Fund (Excess)",
-                        "Total Return": f"{excess_port * 100:+.3f}%",
-                        "Market β": f"{week_beta_map.get('Market', 0):.3f}",
-                        "Value β": f"{week_beta_map.get('Value', 0):.3f}",
-                        "Momentum β": f"{week_beta_map.get('Momentum', 0):.3f}",
-                        "Growth β": f"{week_beta_map.get('Growth', 0):.3f}",
+                        "Total Return": f"{excess_port_week * 100:+.3f}%",
+                        "Market β": f"{week_beta_map_excess.get('Market', 0):.3f}",
+                        "Value β": f"{week_beta_map_excess.get('Value', 0):.3f}",
+                        "Momentum β": f"{week_beta_map_excess.get('Momentum', 0):.3f}",
+                        "Growth β": f"{week_beta_map_excess.get('Growth', 0):.3f}",
                     },
                     {
                         "": "SPY Return",
@@ -1204,11 +1220,11 @@ for idx, name in enumerate(pf.SUBFUNDS):
                     },
                     {
                         "": "Imputed Excess Return",
-                        "Total Return": f"{excess_imputed * 100:+.3f}%",
-                        "Market β": f"{week_beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
-                        "Value β": f"{week_beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
-                        "Momentum β": f"{week_beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-                        "Growth β": f"{week_beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
+                        "Total Return": f"{sum(week_beta_map_excess.get(f, 0) * factor_rets_week.get(f, 0) for f in factor_names) * 100:+.3f}%",
+                        "Market β": f"{week_beta_map_excess.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
+                        "Value β": f"{week_beta_map_excess.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
+                        "Momentum β": f"{week_beta_map_excess.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
+                        "Growth β": f"{week_beta_map_excess.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%",
                     },
                     {
                         "": "Alpha",
