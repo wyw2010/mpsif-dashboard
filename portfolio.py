@@ -932,7 +932,7 @@ def compute_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
     # Regress portfolio returns on factor returns from data.pk (multivariate OLS, trailing 6 months).
     
     # Load factor return data
-    factor_data = pd.read_pickle('data.pk')
+    factor_data = pd.read_parquet('data.parquet')
 
     if factor_data.empty:
         log.warning("Factor betas: no factor data found")
@@ -1082,7 +1082,7 @@ def _compute_factor_betas_uncached(
     from scipy import stats as sp_stats
 
     # Load factor return data
-    factor_data = pd.read_pickle('data.pk')
+    factor_data = pd.read_parquet('data.parquet')
     if factor_data.empty:
         log.warning("Factor betas: no factor data found")
         return {}
@@ -1514,7 +1514,7 @@ def _weekly_factor_attribution_uncached(
     port_rets: pd.Series, betas: dict, start: str, end: str
 ) -> pd.DataFrame:
     # Daily factor returns from pickle
-    factor_daily = pd.read_pickle('data.pk')
+    factor_daily = pd.read_parquet('data.parquet')
     factor_daily = factor_daily.rename(columns={'mkt':'Market', 'momentum':'Momentum', 'growth':'Growth', 'value':'Value'})
     factor_daily.index = pd.to_datetime(factor_daily.index).normalize()
 
