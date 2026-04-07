@@ -1307,11 +1307,18 @@ def _compute_etf_factor_betas_uncached(port_rets: pd.Series, start: str, end: st
     return result
 
 
-def load_theme_map(filepath="data/Returns Attribution v2.xlsx") -> dict:
-    """Load ticker → theme mapping from the Portfolio Positions tab.
-    Returns dict like {'APLD': 'Digital Infra', 'ABNB': 'Experientials', ...}
-    """
-    df = pd.read_excel(filepath, sheet_name="Portfolio Positions")
+# def load_theme_map(filepath="data/Returns Attribution v2.xlsx") -> dict:
+#     """Load ticker → theme mapping from the Portfolio Positions tab.
+#     Returns dict like {'APLD': 'Digital Infra', 'ABNB': 'Experientials', ...}
+#     """
+#     df = pd.read_excel(filepath, sheet_name="Portfolio Positions")
+#     df = df.dropna(subset=["Symbol", "Subtheme"])
+#     # Filter out non-string subthemes (junk rows like 649.71)
+#     df = df[df["Subtheme"].apply(lambda x: isinstance(x, str))]
+#     return dict(zip(df["Symbol"], df["Subtheme"]))
+
+def load_theme_map(filepath="data/Portfolio_Positions_04-06-2026.xlsx - Sheet1.csv") -> dict:
+    df = pd.read_csv(filepath)
     df = df.dropna(subset=["Symbol", "Subtheme"])
     # Filter out non-string subthemes (junk rows like 649.71)
     df = df[df["Subtheme"].apply(lambda x: isinstance(x, str))]
