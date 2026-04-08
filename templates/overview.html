@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}NYU MPSIF — Overview{% endblock %}
+
+{% block content %}
+{% if not has_data %}
+<div class="alert alert-info">No transaction data loaded for any sub-fund yet.</div>
+{% elif not period_rets %}
+<div class="alert alert-info">No return data available yet.</div>
+{% else %}
+
+<!-- Period Returns -->
+<div class="metrics-row">
+    {% for period, val in period_rets.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ period }}</div>
+        <div class="metric-value {{ val | color_class }}">{{ val | fmt_pct }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Key Metrics -->
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">Total AUM</div>
+        <div class="metric-value">{{ total_aum | fmt_dollar }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Sharpe Ratio (Rf={{ "%.1f%%" | format(risk_free_rate * 100) }})</div>
+        <div class="metric-value">{{ "%.3f" | format(sharpe) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Max Drawdown</div>
+        <div class="metric-value {{ max_dd | color_class }}">{{ max_dd | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Ann. Volatility</div>
+        <div class="metric-value">{{ ann_vol | fmt_pct }}</div>
+    </div>
+</div>
+
+<!-- Blended Benchmark -->
+{% if bench_reg %}
+<div class="section-header">vs. Blended Benchmark (50% SPY + 25% IWV + 25% AGG)</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">Excess Return</div>
+        <div class="metric-value {{ bench_reg.excess_return | color_class }}">{{ bench_reg.excess_return | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ bench_reg.alpha | color_class }}">{{ bench_reg.alpha | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Market Beta</div>
+        <div class="metric-value">{{ "%.3f" | format(bench_reg.beta) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ bench_reg.idio_vol | fmt_pct }}</div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Multi-Fund Cumulative Returns -->
+<div class="section-header">Cumulative Returns</div>
+<div class="seg-control" id="fund-toggle">
+    {% for name in fund_names %}
+    <button class="seg-btn active" data-fund="{{ name }}" onclick="toggleFund(this)">{{ name }}</button>
+    {% endfor %}
+</div>
+<div class="chart-container" id="multi-fund-chart"></div>
+
+<!-- Drawdown -->
+<div class="section-header">Drawdown</div>
+<div class="chart-container" id="drawdown-chart"></div>
+
+<!-- Sub-Fund Summary -->
+<div class="section-header">Sub-Fund Summary</div>
+<div class="table-wrap">
+    <table class="clean-table" id="summary-table">
+        <thead>
+            <tr>
+                {% for col in ["Sub-Fund", "Benchmark", "AUM", "1D", "1W", "1M", "YTD", "Excess (YTD)", "Sharpe", "Max DD"] %}
+                <th>{{ col }}<span class="sort-arrow"></span></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in summary_rows %}
+            <tr>
+                <td>{{ row["Sub-Fund"] }}</td>
+                <td>{{ row["Benchmark"] }}</td>
+                <td>{{ row["AUM"] }}</td>
+                <td data-sv="{{ row['1D'].replace('%','').replace('+','') }}">{{ row["1D"] }}</td>
+                <td data-sv="{{ row['1W'].replace('%','').replace('+','') }}">{{ row["1W"] }}</td>
+                <td data-sv="{{ row['1M'].replace('%','').replace('+','') }}">{{ row["1M"] }}</td>
+                <td data-sv="{{ row['YTD'].replace('%','').replace('+','') }}">{{ row["YTD"] }}</td>
+                <td data-sv="{{ row['Excess (YTD)'].replace('%','').replace('+','') }}">{{ row["Excess (YTD)"] }}</td>
+                <td data-sv="{{ row['Sharpe'] }}">{{ row["Sharpe"] }}</td>
+                <td data-sv="{{ row['Max DD'].replace('%','').replace('+','') }}">{{ row["Max DD"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Correlation Matrix -->
+{% if correlation_chart %}
+<div class="section-header">Sub-Fund Correlation Matrix</div>
+<div class="chart-container" id="correlation-chart"></div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if has_data and period_rets %}
+// Multi-fund chart
+var multiFundData = {{ multi_fund_chart | safe }};
+var multiFundParsed = JSON.parse(multiFundData);
+Plotly.newPlot('multi-fund-chart', multiFundParsed.data, multiFundParsed.layout, PLOTLY_CFG);
+
+// Drawdown chart
+var ddData = {{ drawdown_chart | safe }};
+var ddParsed = JSON.parse(ddData);
+Plotly.newPlot('drawdown-chart', ddParsed.data, ddParsed.layout, PLOTLY_CFG);
+
+// Correlation heatmap
+{% if correlation_chart %}
+var corrData = {{ correlation_chart | safe }};
+var corrParsed = JSON.parse(corrData);
+Plotly.newPlot('correlation-chart', corrParsed.data, corrParsed.layout, PLOTLY_CFG);
+{% endif %}
+
+// Summary table sorting
+initSortableTable('summary-table');
+
+// Fund toggle
+function toggleFund(btn) {
+    btn.classList.toggle('active');
+    var fundName = btn.getAttribute('data-fund');
+    var chartDiv = document.getElementById('multi-fund-chart');
+    var traces = chartDiv.data;
+    for (var i = 0; i < traces.length; i++) {
+        if (traces[i].name === fundName) {
+            var isActive = btn.classList.contains('active');
+            Plotly.restyle('multi-fund-chart', {visible: isActive ? true : 'legendonly'}, [i]);
+            break;
+        }
+    }
+}
+{% endif %}
+</script>
+{% endblock %}

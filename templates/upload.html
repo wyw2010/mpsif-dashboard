@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}NYU MPSIF — Upload{% endblock %}
+
+{% block content %}
+
+{% if msg %}
+<div class="alert alert-success">{{ msg }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<!-- Transaction Upload -->
+<div class="section-header">Upload Transaction Report</div>
+<p class="caption">
+    Upload your <strong>Fidelity CSV export</strong> to update a sub-fund's transaction history.
+    The file will replace the existing data for that sub-fund.
+</p>
+
+<form action="/upload/transactions" method="post" enctype="multipart/form-data" style="max-width: 500px;">
+    <div class="form-group">
+        <label>Select Sub-Fund</label>
+        <select name="subfund">
+            {% for name in subfund_names %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Upload Fidelity CSV</label>
+        <input type="file" name="csv_file" accept=".csv" required>
+    </div>
+    <button type="submit" class="btn-primary">Save &amp; Update</button>
+</form>
+
+<!-- Holdings Snapshot Upload -->
+<div style="margin-top: 2rem;"></div>
+<div class="section-header">Upload Historical Holdings Snapshot</div>
+<p class="caption">
+    Upload a <strong>Fidelity Portfolio Positions</strong> CSV for a specific Friday.
+    This snapshot will be used as the holdings weights when computing the
+    <strong>Weekly Return Attribution</strong> tables for that week. It does not affect
+    any other section of the dashboard.
+</p>
+
+<form action="/upload/snapshot" method="post" enctype="multipart/form-data" style="max-width: 500px;">
+    <div class="form-group">
+        <label>Select Sub-Fund</label>
+        <select name="subfund">
+            {% for name in subfund_names %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Friday Date</label>
+        <input type="date" name="friday_date" value="{{ default_friday }}" required>
+        <div class="caption" style="margin-top: 0.25rem;">The Friday that closes the week these holdings represent. Must be a Friday.</div>
+    </div>
+    <div class="form-group">
+        <label>Upload Positions CSV</label>
+        <input type="file" name="csv_file" accept=".csv" required>
+    </div>
+    <button type="submit" class="btn-primary">Save Snapshot</button>
+</form>
+
+<!-- Existing Snapshots -->
+<div style="margin-top: 1.5rem;"></div>
+<div class="bold-label">Existing Snapshots</div>
+
+{% set has_any = namespace(val=false) %}
+{% for fund_name, snaps in all_snapshots.items() %}
+{% set has_any.val = true %}
+<div style="margin-top: 0.75rem;">
+    <em>{{ fund_name }}</em>
+    {% for snap in snaps %}
+    <div style="display: flex; align-items: center; gap: 1.5rem; padding: 0.4rem 0; border-bottom: 1px solid #F3F4F6;">
+        <span style="min-width: 180px;">Week ending <strong>{{ snap.friday }}</strong></span>
+        <span class="caption" style="margin-bottom: 0;">
+            {% if snap.n_tickers >= 0 %}{{ snap.n_tickers }} tickers{% else %}(parse error){% endif %}
+        </span>
+        <form action="/upload/snapshot/delete" method="post" style="margin: 0;">
+            <input type="hidden" name="subfund" value="{{ fund_name }}">
+            <input type="hidden" name="friday_date" value="{{ snap.friday_raw }}">
+            <button type="submit" class="btn-danger" onclick="return confirm('Delete this snapshot?')">Delete</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+{% if not has_any.val %}
+<div class="caption" style="font-style: italic;">No snapshots uploaded yet.</div>
+{% endif %}
+
+{% endblock %}

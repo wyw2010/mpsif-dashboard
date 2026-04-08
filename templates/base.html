@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="900">
+    <title>{% block title %}NYU MPSIF{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+    <style>
+        /* Web font fallback for Linux/Render */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        /* Typography */
+        * {
+            font-family: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+            font-weight: 300;
+            margin: 0; padding: 0; box-sizing: border-box;
+        }
+        body { background-color: #FFFFFF; color: #1A1A1A; line-height: 1.6; }
+
+        /* Plotly font override */
+        .js-plotly-plot text,
+        .js-plotly-plot .gtitle,
+        .js-plotly-plot .xtick text,
+        .js-plotly-plot .ytick text,
+        .js-plotly-plot .g-xtitle text,
+        .js-plotly-plot .g-ytitle text,
+        .js-plotly-plot .legendtext {
+            font-family: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif !important;
+            font-weight: 300 !important;
+        }
+        h1, h2, h3, h4, h5, h6, th, thead { font-weight: 500; }
+
+        /* Container */
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
+
+        /* Nav */
+        nav {
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0;
+            margin-bottom: 0;
+            background: #FFFFFF;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .nav-inner {
+            display: flex;
+            align-items: stretch;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 0;
+            margin-right: 2rem;
+            text-decoration: none;
+        }
+        .logo { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+        .logo-nyu { color: #57068C; }
+        .logo-mpsif { color: #1A1A1A; }
+        .nav-links { display: flex; gap: 0; align-items: stretch; overflow-x: auto; }
+        .nav-links a {
+            text-decoration: none;
+            color: #6B7280;
+            font-size: 0.95rem;
+            font-weight: 400;
+            padding: 0.75rem 1.5rem;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: #57068C; }
+        .nav-links a.active {
+            color: #57068C;
+            border-bottom-color: #57068C;
+            font-weight: 600;
+        }
+
+        /* Metric cards */
+        .metric-card {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .metric-label {
+            font-size: 0.75rem;
+            color: #6B7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        .metric-value { font-size: 1.5rem; font-weight: 700; color: #1A1A1A; }
+        .metric-positive { color: #10B981; }
+        .metric-negative { color: #EF4444; }
+        .metrics-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .metrics-row .metric-card { flex: 1; min-width: 120px; }
+
+        /* Section headers */
+        .section-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1A1A1A;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #E5E7EB;
+        }
+
+        /* Sortable tables */
+        .table-wrap { max-height: 450px; overflow-y: auto; margin-bottom: 1rem; }
+        .clean-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .clean-table thead th {
+            background: #F5F0FA;
+            color: #1A1A1A;
+            font-weight: 500;
+            font-size: 0.8rem;
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 2px solid #E5E7EB;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+        .clean-table tbody td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #F3F4F6;
+            font-weight: 300;
+            white-space: nowrap;
+        }
+        .clean-table tbody tr:hover { background: #FAFAFA; }
+
+        /* Two-column layout */
+        .row { display: flex; gap: 1.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .col-1 { flex: 1; min-width: 250px; }
+        .col-2 { flex: 2; min-width: 350px; }
+        .col-half { flex: 1; min-width: 300px; }
+
+        /* Chart container */
+        .chart-container { width: 100%; margin-bottom: 1rem; }
+
+        /* Segmented control */
+        .seg-control { display: inline-flex; gap: 0; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
+        .seg-btn {
+            padding: 0.4rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 400;
+            border: none;
+            background: #FFFFFF;
+            color: #6B7280;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+        }
+        .seg-btn:not(:last-child) { border-right: 1px solid #E5E7EB; }
+        .seg-btn:hover { background: #F5F0FA; color: #57068C; }
+        .seg-btn.active { background: #57068C; color: #FFFFFF; font-weight: 500; }
+
+        /* Caption */
+        .caption { font-size: 0.8rem; color: #6B7280; margin-bottom: 0.5rem; }
+        .caption strong { font-weight: 500; }
+
+        /* Bold markdown */
+        .bold-label { font-weight: 500; margin-bottom: 0.5rem; font-size: 0.95rem; }
+
+        /* HR */
+        hr { border: none; border-top: 1px solid #E5E7EB; margin: 1.5rem 0; }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 1.5rem 0 2rem 0;
+            border-top: 1px solid #E5E7EB;
+            margin-top: 2rem;
+        }
+        .footer img { height: 45px; margin-bottom: 0.5rem; }
+        .footer-text {
+            font-size: 0.75rem;
+            color: #6B7280;
+        }
+
+        /* Forms */
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem; color: #1A1A1A; }
+        .form-group select,
+        .form-group input[type="date"],
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-family: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+            font-weight: 300;
+        }
+        .btn-primary {
+            background: #57068C;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 0.6rem 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+        }
+        .btn-primary:hover { background: #8900e1; }
+        .btn-danger {
+            background: #EF4444;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 6px;
+            padding: 0.3rem 0.75rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .btn-danger:hover { background: #DC2626; }
+
+        /* Alerts */
+        .alert { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.85rem; }
+        .alert-success { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+        .alert-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+        .alert-info { background: #F5F0FA; color: #57068C; border: 1px solid #E5D4F5; }
+
+        /* Multiselect (for stock explorer) */
+        .multiselect-wrap { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+        .multiselect-chip {
+            padding: 0.3rem 0.75rem;
+            background: #F5F0FA;
+            border: 1px solid #E5D4F5;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .multiselect-chip.selected { background: #57068C; color: #FFFFFF; border-color: #57068C; }
+        .multiselect-chip:hover { border-color: #57068C; }
+
+        /* Expander / details */
+        details { margin-bottom: 1rem; }
+        details summary {
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.95rem;
+            color: #57068C;
+            padding: 0.5rem 0;
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            .modebar { display: none !important; }
+            .container { padding: 0 0.5rem; }
+            .nav-inner { padding: 0 0.5rem; }
+            .logo { font-size: 1.4rem; }
+            .nav-links a { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
+            .metric-card { padding: 0.6rem 0.4rem; border-radius: 8px; }
+            .metric-label { font-size: 0.6rem; letter-spacing: 0.25px; }
+            .metric-value { font-size: 0.95rem; }
+            .section-header { font-size: 0.95rem; margin-top: 1rem; }
+            .metrics-row { gap: 0.5rem; }
+            .metrics-row .metric-card { min-width: 45%; flex: 1 1 45%; }
+            .row { flex-direction: column; gap: 0.75rem; }
+            .col-1, .col-2, .col-half { min-width: 100%; }
+            .clean-table { font-size: 0.75rem; }
+            .clean-table thead th { font-size: 0.7rem; padding: 0.4rem 0.5rem; }
+            .clean-table tbody td { padding: 0.35rem 0.5rem; }
+            .seg-btn { font-size: 0.75rem; padding: 0.3rem 0.7rem; }
+            .seg-control { flex-wrap: wrap; gap: 0.3rem; border: none; }
+            .seg-btn { border: 1px solid #E5E7EB; border-radius: 6px; }
+            .footer img { height: 30px; }
+        }
+
+        @media (max-width: 480px) {
+            .logo { font-size: 1.2rem; }
+            .metric-value { font-size: 0.85rem; }
+            .metric-label { font-size: 0.55rem; }
+            .metric-card { padding: 0.5rem 0.3rem; }
+            .nav-links a { font-size: 0.7rem; padding: 0.4rem 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="nav-logo">
+            <span class="logo"><span class="logo-nyu">NYU</span> <span class="logo-mpsif">MPSIF</span></span>
+        </a>
+        <div class="nav-links">
+            <a href="/" class="{% if active_page == 'overview' %}active{% endif %}">Overview</a>
+            {% for fund in subfunds %}
+            <a href="/fund/{{ fund|lower|replace(' ', '-') }}" class="{% if active_page == fund|lower|replace(' ', '-') %}active{% endif %}">{{ fund }}</a>
+            {% endfor %}
+            <a href="/upload" class="{% if active_page == 'upload' %}active{% endif %}">Upload</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="padding-top: 1.5rem;">
+    {% block content %}{% endblock %}
+</div>
+
+{% if logo_b64 %}
+<div class="footer">
+    <img src="data:image/png;base64,{{ logo_b64 }}" alt="NYU Stern" />
+    <div class="footer-text">
+        &copy; 2026 NYU Michael Price Student Investment Fund | Contact willwu@stern.nyu.edu for technical help
+    </div>
+</div>
+{% endif %}
+
+<script>
+/* Sortable table helper */
+function initSortableTable(tableId) {
+    var tbl = document.getElementById(tableId);
+    if (!tbl) return;
+    var headers = tbl.querySelectorAll("thead th");
+    var dirs = {};
+    headers.forEach(function(th, col) {
+        dirs[col] = null;
+        th.addEventListener("click", function() {
+            var tbody = tbl.querySelector("tbody");
+            var rows = Array.from(tbody.querySelectorAll("tr"));
+            var asc = dirs[col] === null ? true : !dirs[col];
+            dirs[col] = asc;
+            rows.sort(function(a, b) {
+                var av = a.children[col].getAttribute("data-sv") || a.children[col].textContent;
+                var bv = b.children[col].getAttribute("data-sv") || b.children[col].textContent;
+                var an = parseFloat(av), bn = parseFloat(bv);
+                if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+                return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+            headers.forEach(function(h, i) {
+                var arrow = h.querySelector(".sort-arrow");
+                if (arrow) arrow.textContent = i === col ? (asc ? " \u25b2" : " \u25bc") : "";
+            });
+        });
+    });
+}
+
+/* Plotly config */
+var PLOTLY_CFG = {{ plotly_cfg | safe }};
+</script>
+
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

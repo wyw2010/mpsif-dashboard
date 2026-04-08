@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+{% block title %}NYU MPSIF — {{ fund_name }}{% endblock %}
+
+{% block content %}
+{% if not has_data %}
+<div class="alert alert-info">No transaction data available for <strong>{{ fund_name }}</strong>. Provide the Fidelity CSV to load this sub-fund.</div>
+{% else %}
+
+<!-- Period Returns -->
+<div class="metrics-row">
+    {% for period, val in period_rets.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ period }}</div>
+        <div class="metric-value {{ val | color_class }}">{{ val | fmt_pct }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Key Metrics -->
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">AUM</div>
+        <div class="metric-value">{{ aum | fmt_dollar }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Sharpe (Rf={{ "%.1f%%" | format(risk_free_rate * 100) }})</div>
+        <div class="metric-value">{{ "%.3f" | format(sharpe) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Max DD</div>
+        <div class="metric-value {{ max_dd | color_class }}">{{ max_dd | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Ann. Vol</div>
+        <div class="metric-value">{{ ann_vol | fmt_pct }}</div>
+    </div>
+</div>
+
+<!-- Benchmark Metrics -->
+{% if bench_reg %}
+<div class="section-header">vs. {{ bench_ticker }} Benchmark</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">Excess Return</div>
+        <div class="metric-value {{ bench_reg.excess_return | color_class }}">{{ bench_reg.excess_return | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ bench_reg.alpha | color_class }}">{{ bench_reg.alpha | fmt_pct }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Market Beta</div>
+        <div class="metric-value">{{ "%.3f" | format(bench_reg.beta) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ bench_reg.idio_vol | fmt_pct }}</div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Cumulative Return Chart -->
+<div class="section-header">{{ fund_name }} — Cumulative Return</div>
+<div class="seg-control" id="period-control">
+    <button class="seg-btn" data-period="1w" onclick="switchPeriod(this)">1W</button>
+    <button class="seg-btn" data-period="1m" onclick="switchPeriod(this)">1M</button>
+    <button class="seg-btn active" data-period="ytd" onclick="switchPeriod(this)">YTD</button>
+    <button class="seg-btn" data-period="all" onclick="switchPeriod(this)">All</button>
+    <button class="seg-btn" data-period="custom" onclick="switchPeriod(this)">Custom</button>
+</div>
+<div id="custom-date-range" style="display:none; margin-bottom: 1rem;">
+    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label>Start date</label>
+            <input type="date" id="custom-start" value="{{ chart_start_date }}" min="{{ chart_start_date }}" max="{{ chart_end_date }}">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label>End date</label>
+            <input type="date" id="custom-end" value="{{ chart_end_date }}" min="{{ chart_start_date }}" max="{{ chart_end_date }}">
+        </div>
+        <button class="btn-primary" style="margin-top: 1.2rem;" onclick="applyCustomRange()">Apply</button>
+    </div>
+</div>
+<div class="chart-container" id="return-chart"></div>
+
+<!-- Drawdown -->
+<div class="section-header">Drawdown</div>
+<div class="chart-container" id="drawdown-chart"></div>
+
+<!-- Current Holdings -->
+{% if holdings_table %}
+<div class="section-header">Current Holdings</div>
+<div class="row">
+    <div class="col-1">
+        <div class="chart-container" id="holdings-pie"></div>
+    </div>
+    <div class="col-2">
+        <div class="table-wrap" style="max-height: 450px;">
+            <table class="clean-table" id="holdings-table">
+                <thead>
+                    <tr>
+                        <th>Ticker<span class="sort-arrow"></span></th>
+                        <th>Shares<span class="sort-arrow"></span></th>
+                        <th>Weight (%)<span class="sort-arrow"> &#x25bc;</span></th>
+                        <th>Avg Price ($)<span class="sort-arrow"></span></th>
+                        <th>Price ($)<span class="sort-arrow"></span></th>
+                        <th>P&amp;L ($)<span class="sort-arrow"></span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in holdings_table %}
+                    <tr>
+                        <td>{{ row["Ticker"] }}</td>
+                        <td data-sv="{{ row._shares_raw }}">{{ row["Shares"] }}</td>
+                        <td data-sv="{{ row._weight_raw }}">{{ row["Weight (%)"] }}</td>
+                        <td data-sv="{{ row._avg_raw }}">{{ row["Avg Price ($)"] }}</td>
+                        <td data-sv="{{ row._price_raw }}">{{ row["Price ($)"] }}</td>
+                        <td data-sv="{{ row._pnl_raw }}">{{ row["P&L ($)"] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Sector Exposure -->
+{% if sector_table %}
+<div class="section-header">Sector Exposure</div>
+<div class="row">
+    <div class="col-half">
+        <div class="chart-container" id="sector-pie"></div>
+    </div>
+    <div class="col-half">
+        <div class="table-wrap" style="max-height: 350px;">
+            <table class="clean-table" id="sector-table">
+                <thead>
+                    <tr>
+                        <th>Sector<span class="sort-arrow"></span></th>
+                        <th>Weight (%)<span class="sort-arrow"></span></th>
+                        <th># Holdings<span class="sort-arrow"></span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in sector_table %}
+                    <tr>
+                        <td>{{ row.Sector }}</td>
+                        <td data-sv="{{ row['Weight (%)'] }}">{{ "%.3f%%" | format(row['Weight (%)']) }}</td>
+                        <td data-sv="{{ row.Holdings }}">{{ row.Holdings }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Factor Exposure (Fama-French) -->
+{% if ff_factors %}
+<div class="section-header">Factor Exposure</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(ff_factors.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ ff_factors.alpha | color_class }}">{{ (ff_factors.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in ff_factors.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (ff_factors.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+<!-- Factor Exposure (ETF Proxies) -->
+{% if etf_factors %}
+<div class="section-header">Factor Exposure (ETF Proxies)</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(etf_factors.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ etf_factors.alpha | color_class }}">{{ (etf_factors.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in etf_factors.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (etf_factors.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+<!-- Weekly Return Attribution -->
+{% if weekly_attribution_blocks %}
+<div class="section-header">Weekly Return Attribution</div>
+{% for block in weekly_attribution_blocks %}
+<div class="bold-label">Absolute Return</div>
+<div class="caption">{{ block.label }}</div>
+<div class="table-wrap" style="max-height: 250px;">
+    <table class="clean-table" id="abs-table-{{ loop.index }}">
+        <thead>
+            <tr>
+                {% for col in ["", "Total Return", "Market \u03b2", "Value \u03b2", "Momentum \u03b2", "Growth \u03b2"] %}
+                <th>{{ col }}<span class="sort-arrow"></span></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in block.abs_rows %}
+            <tr>
+                <td>{{ row[""] }}</td>
+                <td>{{ row["Total Return"] }}</td>
+                <td>{{ row["Market \u03b2"] }}</td>
+                <td>{{ row["Value \u03b2"] }}</td>
+                <td>{{ row["Momentum \u03b2"] }}</td>
+                <td>{{ row["Growth \u03b2"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div style="margin-top: 1rem;"></div>
+<div class="bold-label">Excess Return (vs SPY)</div>
+<div class="caption">{{ block.label }}</div>
+<div class="table-wrap" style="max-height: 280px;">
+    <table class="clean-table" id="excess-table-{{ loop.index }}">
+        <thead>
+            <tr>
+                {% for col in ["", "Total Return", "Market \u03b2", "Value \u03b2", "Momentum \u03b2", "Growth \u03b2"] %}
+                <th>{{ col }}<span class="sort-arrow"></span></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in block.excess_rows %}
+            <tr>
+                <td>{{ row[""] }}</td>
+                <td>{{ row["Total Return"] }}</td>
+                <td>{{ row["Market \u03b2"] }}</td>
+                <td>{{ row["Value \u03b2"] }}</td>
+                <td>{{ row["Momentum \u03b2"] }}</td>
+                <td>{{ row["Growth \u03b2"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if not loop.last %}
+<hr>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<!-- Weekly Factor Attribution -->
+{% if weekly_factor_attr %}
+<div class="section-header">Weekly Factor Return Attribution</div>
+<div class="caption">Factor contributions (%) = &beta; &times; weekly factor return. Residual = unexplained by factors.</div>
+<div class="table-wrap" style="max-height: 400px;">
+    <table class="clean-table" id="weekly-factor-table">
+        <thead>
+            <tr>
+                {% for col in weekly_factor_cols %}
+                <th>{{ col }}<span class="sort-arrow"></span></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in weekly_factor_attr %}
+            <tr>
+                {% for col in weekly_factor_cols %}
+                <td>{{ row[col] }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Weekly Theme Attribution (Thematic only) -->
+{% if fund_name == "Thematic" and weekly_theme_attr %}
+<div class="section-header">Weekly Theme Attribution</div>
+<div class="caption">Theme contributions (%) = &Sigma;(weight &times; asset weekly return) / total return, computed for each theme.</div>
+<div class="row">
+    <div class="col-1">
+        <div class="chart-container" id="theme-bar-chart"></div>
+    </div>
+    <div class="col-2">
+        <div class="table-wrap" style="max-height: 400px;">
+            <table class="clean-table" id="theme-table">
+                <thead>
+                    <tr>
+                        {% for col in weekly_theme_cols %}
+                        <th>{{ col }}<span class="sort-arrow"></span></th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in weekly_theme_attr %}
+                    <tr>
+                        {% for col in weekly_theme_cols %}
+                        <td>{{ row[col] }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Dividends -->
+{% if dividends %}
+<div class="section-header">Dividend &amp; Fee History</div>
+<div class="caption">Total dividend income: <strong>{{ "$%.3f" | format(total_dividends) }}</strong></div>
+<div class="table-wrap" style="max-height: 250px;">
+    <table class="clean-table" id="dividends-table">
+        <thead>
+            <tr>
+                <th>Date<span class="sort-arrow"></span></th>
+                <th>Ticker<span class="sort-arrow"></span></th>
+                <th>Amount ($)<span class="sort-arrow"></span></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in dividends %}
+            <tr>
+                <td>{{ row.Date }}</td>
+                <td>{{ row.Ticker }}</td>
+                <td data-sv="{{ row._amount_raw }}">{{ row["Amount ($)"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Bond Price Entry (Fixed Income only) -->
+{% if fund_name == "Fixed Income" and bond_entries %}
+<div class="section-header">Corporate Bond Prices</div>
+<div class="caption">Enter current bond prices and coupon details. Accrued interest is calculated automatically.</div>
+<form action="/bond-prices" method="post">
+    {% for bond in bond_entries %}
+    <div class="bold-label">{{ bond.cusip }} — {{ bond.description }}</div>
+    <div class="metrics-row" style="margin-bottom: 1rem;">
+        <div class="form-group" style="flex:1; min-width: 120px;">
+            <label>Current Price (per $100)</label>
+            <input type="number" name="price_{{ bond.cusip }}" value="{{ bond.current_price }}" min="0" max="200" step="0.01">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 120px;">
+            <label>Purchase Price (per $100)</label>
+            <input type="number" name="purchase_{{ bond.cusip }}" value="{{ bond.purchase_price }}" min="0" max="200" step="0.01">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 120px;">
+            <label>Face Value ($)</label>
+            <input type="number" name="face_{{ bond.cusip }}" value="{{ bond.face_value }}" min="0" step="1000">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 120px;">
+            <label>Coupon Rate (%)</label>
+            <input type="number" name="coupon_{{ bond.cusip }}" value="{{ bond.coupon_rate }}" min="0" max="20" step="0.125">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 120px;">
+            <label>Purchase Date</label>
+            <input type="text" name="date_{{ bond.cusip }}" value="{{ bond.purchase_date }}" placeholder="YYYY-MM-DD">
+        </div>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn-primary">Update Bond Prices</button>
+</form>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if has_data %}
+
+// Chart data for each period
+var chartData = {
+    'ytd': {{ return_chart_ytd | safe }},
+    '1w': {{ return_chart_1w | safe }},
+    '1m': {{ return_chart_1m | safe }},
+    'all': {{ return_chart_all | safe }}
+};
+var currentPeriod = 'ytd';
+
+// Parse and render initial chart
+function renderReturnChart(period) {
+    var data = JSON.parse(chartData[period]);
+    Plotly.newPlot('return-chart', data.data, data.layout, PLOTLY_CFG);
+}
+renderReturnChart('ytd');
+
+// Period switcher
+function switchPeriod(btn) {
+    var period = btn.getAttribute('data-period');
+    document.querySelectorAll('#period-control .seg-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    currentPeriod = period;
+
+    var customEl = document.getElementById('custom-date-range');
+    if (period === 'custom') {
+        customEl.style.display = 'block';
+    } else {
+        customEl.style.display = 'none';
+        renderReturnChart(period);
+    }
+}
+
+// Custom date range
+function applyCustomRange() {
+    var startDate = document.getElementById('custom-start').value;
+    var endDate = document.getElementById('custom-end').value;
+    // Use the 'all' chart data and relayout to zoom
+    var data = JSON.parse(chartData['all']);
+    Plotly.newPlot('return-chart', data.data, data.layout, PLOTLY_CFG);
+    Plotly.relayout('return-chart', {
+        'xaxis.range': [startDate, endDate]
+    });
+}
+
+// Drawdown chart
+var ddData = JSON.parse({{ drawdown_chart | safe }});
+Plotly.newPlot('drawdown-chart', ddData.data, ddData.layout, PLOTLY_CFG);
+
+// Holdings pie
+{% if holdings_pie %}
+var holdingsPie = JSON.parse({{ holdings_pie | safe }});
+Plotly.newPlot('holdings-pie', holdingsPie.data, holdingsPie.layout, PLOTLY_CFG);
+{% endif %}
+
+// Sector pie
+{% if sector_pie %}
+var sectorPie = JSON.parse({{ sector_pie | safe }});
+Plotly.newPlot('sector-pie', sectorPie.data, sectorPie.layout, PLOTLY_CFG);
+{% endif %}
+
+// Theme bar chart
+{% if theme_bar_chart %}
+var themeBar = JSON.parse({{ theme_bar_chart | safe }});
+Plotly.newPlot('theme-bar-chart', themeBar.data, themeBar.layout, PLOTLY_CFG);
+{% endif %}
+
+// Init sortable tables
+initSortableTable('holdings-table');
+initSortableTable('sector-table');
+initSortableTable('weekly-factor-table');
+initSortableTable('theme-table');
+initSortableTable('dividends-table');
+
+{% endif %}
+</script>
+{% endblock %}

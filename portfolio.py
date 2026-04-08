@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 import os
 import json
 import logging
-import streamlit as st
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -447,20 +446,13 @@ def list_holdings_snapshots(subfund_name: str):
     return out
 
 
-@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
-def _parse_snapshot_cached(path_str: str, mtime: float) -> pd.DataFrame:
-    """Cache key is (path, mtime) so re-parse only happens when the file changes."""
-    return parse_fidelity_positions_csv(path_str)
-
-
 def load_holdings_snapshot(subfund_name: str, friday_date) -> pd.DataFrame:
-    """Load and parse a stored snapshot. Returns an empty DataFrame if missing.
-    Results are cached by (path, mtime) for the lifetime of the Streamlit process."""
+    """Load and parse a stored snapshot. Returns an empty DataFrame if missing."""
     path = _snapshot_path(subfund_name, friday_date)
     if not path.exists():
         return pd.DataFrame()
     try:
-        return _parse_snapshot_cached(str(path), path.stat().st_mtime)
+        return parse_fidelity_positions_csv(str(path))
     except Exception as e:
         log.error(f"load_holdings_snapshot({subfund_name}, {friday_date}): {e}")
         return pd.DataFrame()
@@ -481,17 +473,12 @@ PRICE_CACHE_PATH = _DATA_DIR / "price_cache.csv"
 _ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks/bars"
 
 
-@st.cache_resource
-def _price_cache_holder() -> dict:
-    """Shared mutable container for the in-memory price cache.
-    Using a dict so both the app process and all user sessions see the
-    same DataFrame without re-reading from disk every call.
+_price_cache_holder_singleton = {"df": pd.DataFrame(), "loaded": False}
 
-    Uses ``@st.cache_resource`` (not ``cache_data``) because we want a
-    single shared mutable object rather than per-key memoization.
-    """
-    holder = {"df": pd.DataFrame(), "loaded": False}
-    return holder
+
+def _price_cache_holder() -> dict:
+    """Shared mutable container for the in-memory price cache."""
+    return _price_cache_holder_singleton
 
 
 def _load_price_cache() -> pd.DataFrame:
@@ -661,9 +648,8 @@ def fetch_prices(tickers: list, start: str, end: str) -> pd.DataFrame:
     if not available:
         log.warning(f"  No price data available for any requested tickers")
         return pd.DataFrame()
-    # .copy() is important — the cache is now a shared in-memory object
-    # (@st.cache_resource), so we must not mutate it via the live-price
-    # overlay below.
+    # .copy() is important — the cache is a shared in-memory singleton,
+    # so we must not mutate it via the live-price overlay below.
     result = cache[available].loc[start:end].copy()
 
     # ── Live intraday overlay ──
@@ -842,7 +828,6 @@ def period_returns(rets: pd.Series):
 
 
 # ── Benchmark-relative metrics ───────────────────────────────────────────
-@st.cache_data(ttl=900, show_spinner=False)
 def fetch_benchmark_returns(ticker: str, start: str, end: str) -> pd.Series:
     """Fetch daily returns for a benchmark ETF."""
     prices = fetch_prices([ticker], start, end)
@@ -1044,30 +1029,14 @@ def _fingerprint_holdings(df: pd.DataFrame) -> str:
     return ";".join(f"{t}:{w:.6f}" for t, w in items)
 
 
-@st.cache_data(ttl=900, show_spinner=False, max_entries=32)
-def _compute_factor_betas_impl(
-    _port_rets: pd.Series,
-    _holdings_df: pd.DataFrame,
-    start: str,
-    end: str,
-    cache_key: str,
-) -> dict:
-    """Actual bottom-up factor betas computation. Cached by cache_key (hashable
-    content fingerprint). The pandas args are prefixed with ``_`` so Streamlit
-    skips hashing them — we do it ourselves via cache_key."""
-    return _compute_factor_betas_uncached(_port_rets, _holdings_df, start, end)
-
-
 def compute_factor_betas(
     port_rets: pd.Series,
     holdings_df: pd.DataFrame,
     start: str,
     end: str,
 ) -> dict:
-    """Public entrypoint — computes a content fingerprint of the pandas inputs
-    and dispatches to the cached implementation."""
-    cache_key = f"{_fingerprint_series(port_rets)}|{_fingerprint_holdings(holdings_df)}|{start}|{end}"
-    return _compute_factor_betas_impl(port_rets, holdings_df, start, end, cache_key)
+    """Compute bottom-up factor betas from holdings weights."""
+    return _compute_factor_betas_uncached(port_rets, holdings_df, start, end)
 
 
 def _compute_factor_betas_uncached(
@@ -1218,18 +1187,9 @@ def _compute_factor_betas_uncached(
 
     
 
-@st.cache_data(ttl=900, show_spinner=False, max_entries=16)
-def _compute_etf_factor_betas_impl(
-    _port_rets: pd.Series, start: str, end: str, cache_key: str
-) -> dict:
-    return _compute_etf_factor_betas_uncached(_port_rets, start, end)
-
-
 def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
-    """Public entrypoint — dispatches to the cached implementation using a
-    content fingerprint of port_rets as the cache key."""
-    cache_key = f"{_fingerprint_series(port_rets)}|{start}|{end}"
-    return _compute_etf_factor_betas_impl(port_rets, start, end, cache_key)
+    """Compute factor betas via ETF proxy regression."""
+    return _compute_etf_factor_betas_uncached(port_rets, start, end)
 
 
 def _compute_etf_factor_betas_uncached(port_rets: pd.Series, start: str, end: str) -> dict:
@@ -1487,26 +1447,11 @@ def weekly_factor_attribution(port_rets: pd.Series, betas: dict, start: str, end
     return df
 """
 
-@st.cache_data(ttl=900, show_spinner=False, max_entries=16)
-def _weekly_factor_attribution_impl(
-    _port_rets: pd.Series, _betas: dict, start: str, end: str, cache_key: str
-) -> pd.DataFrame:
-    return _weekly_factor_attribution_uncached(_port_rets, _betas, start, end)
-
-
 def weekly_factor_attribution(
     port_rets: pd.Series, betas: dict, start: str, end: str
 ) -> pd.DataFrame:
-    """Public entrypoint — dispatches to the cached implementation."""
-    # Filter out non-hashable entries (e.g. nested dicts under "_stats") and
-    # build a stable signature from the simple scalar beta values.
-    beta_sig = ";".join(
-        f"{k}:{float(v):.6f}"
-        for k, v in sorted(betas.items())
-        if isinstance(v, (int, float)) and not isinstance(v, bool)
-    )
-    cache_key = f"{_fingerprint_series(port_rets)}|{beta_sig}|{start}|{end}"
-    return _weekly_factor_attribution_impl(port_rets, betas, start, end, cache_key)
+    """Compute weekly factor attribution from betas and factor returns."""
+    return _weekly_factor_attribution_uncached(port_rets, betas, start, end)
 
 
 # VERSION THAT USES CONSTRUCTED FACTORS
@@ -1808,7 +1753,6 @@ def current_holdings(daily_pos, prices):
 
 
 # ── 8. Master builder (per sub-fund) ─────────────────────────────────────
-@st.cache_data(ttl=900, show_spinner="Loading sub-fund data and fetching prices …")
 def build_subfund(csv_path: str):
     log.info(f"═══ build_subfund START: {csv_path} ═══")
 
