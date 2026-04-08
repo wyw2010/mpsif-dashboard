@@ -207,7 +207,7 @@ def make_multi_fund_chart(fund_data, visible, height=400):
     return fig
 
 
-def make_holdings_pie(holdings_df, height=350):
+def make_holdings_pie(holdings_df, height=400):
     if holdings_df.empty:
         return go.Figure()
     df = holdings_df.copy()
@@ -223,9 +223,11 @@ def make_holdings_pie(holdings_df, height=350):
         df = pd.concat([large, other], ignore_index=True)
     else:
         df = large
+    df = df.sort_values("Weight (%)", ascending=False)
     fig = go.Figure(go.Pie(
         labels=df["Ticker"].tolist(), values=df["Weight (%)"].tolist(), hole=0.45,
         textinfo="label+percent", textfont_size=11,
+        textposition="auto",
         marker=dict(colors=[
             NYU_PURPLE, "#8900e1", "#2563EB", "#3B82F6", "#60A5FA",
             "#D97706", "#F59E0B", "#059669", "#10B981", "#34D399",
@@ -235,9 +237,13 @@ def make_holdings_pie(holdings_df, height=350):
         hovertemplate="%{label}<br>Weight: %{value:.3f}%<extra></extra>",
     ))
     fig.update_layout(
-        height=height, margin=dict(l=0, r=0, t=10, b=0),
+        height=height, margin=dict(l=20, r=20, t=10, b=10),
         paper_bgcolor=WHITE, font=_PLOTLY_FONT,
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5,
+            font=dict(size=11),
+        ),
     )
     return fig
 
@@ -323,135 +329,6 @@ def fig_to_json(fig):
     """Convert a Plotly figure to a JSON string for client-side rendering."""
     return fig.to_json()
 
-
-# ── Helper: extract beta map ─────────────────────────────────────────────
-FACTOR_NAMES = ['Market', 'Momentum', 'Growth', 'Value']
-
-def _extract_beta_map(betas_dict):
-    bm = {}
-    for fname in FACTOR_NAMES:
-        for key, val in betas_dict.items():
-            if key.startswith("_"):
-                continue
-            if fname.lower() in key.lower():
-                bm[fname] = val
-                break
-    return bm
-
-
-def _build_weekly_attribution(name, rets, holdings, start_str, end_str, subfund_data):
-    """Build weekly return attribution data for a sub-fund."""
-    factor_data = pd.read_parquet('data.parquet')
-    factor_data.index = pd.to_datetime(factor_data.index).normalize()
-    factor_data = factor_data.rename(columns={'mkt': 'Market', 'momentum': 'Momentum', 'growth': 'Growth', 'value': 'Value'})
-
-    port_clean = rets.copy()
-    port_clean.index = pd.to_datetime(port_clean.index).normalize()
-    port_weekly = (1 + port_clean).resample("W-FRI").prod() - 1
-    port_weekly = port_weekly.dropna()
-
-    factor_weekly = (1 + factor_data).resample("W-FRI").prod() - 1
-
-    spy_prices = pf.fetch_prices(["SPY"], start_str, end_str)
-    spy_daily = spy_prices["SPY"].pct_change().dropna() if "SPY" in spy_prices.columns else pd.Series(dtype=float)
-    spy_daily.index = pd.to_datetime(spy_daily.index).normalize()
-    spy_weekly = (1 + spy_daily).resample("W-FRI").prod() - 1 if not spy_daily.empty else pd.Series(dtype=float)
-
-    blocks = []
-
-    snapshots = pf.list_holdings_snapshots(name)
-    if snapshots:
-        for _friday, _path in snapshots:
-            try:
-                snap_df = pf.load_holdings_snapshot(name, _friday)
-            except Exception:
-                continue
-            if snap_df.empty:
-                continue
-            label = f"Week ending {_friday.strftime('%b %d, %Y')} \u00b7 uploaded snapshot ({len(snap_df)} tickers)"
-            block = _render_attribution_block(_friday, snap_df, label, rets, port_weekly, factor_weekly, spy_weekly, start_str, end_str, holdings)
-            if block:
-                blocks.append(block)
-    else:
-        common_dates = port_weekly.index.intersection(factor_weekly.index)
-        if len(common_dates) > 0:
-            last_week = common_dates[-1]
-            label = f"Week ending {last_week.strftime('%b %d, %Y')} \u00b7 reconstructed holdings"
-            block = _render_attribution_block(last_week, holdings, label, rets, port_weekly, factor_weekly, spy_weekly, start_str, end_str, holdings)
-            if block:
-                blocks.append(block)
-
-    return blocks
-
-
-def _render_attribution_block(friday, holdings_for_week, label, rets, port_weekly, factor_weekly, spy_weekly, start_str, end_str, fallback_holdings):
-    """Build data for one week's Absolute Return + Excess Return tables."""
-    if friday not in port_weekly.index or friday not in factor_weekly.index:
-        return None
-
-    week_result = pf.compute_factor_betas(rets, holdings_for_week, start_str, end_str)
-    week_beta_map = _extract_beta_map(week_result)
-
-    port_ret_week = port_weekly.loc[friday]
-    factor_rets_week = {f: factor_weekly.loc[friday, f] for f in FACTOR_NAMES if f in factor_weekly.columns}
-    spy_ret_week = spy_weekly.loc[friday] if friday in spy_weekly.index else 0.0
-
-    imputed_total = sum(week_beta_map.get(f, 0) * factor_rets_week.get(f, 0) for f in FACTOR_NAMES)
-    alpha_residual = port_ret_week - imputed_total
-
-    # Absolute Return table
-    abs_rows = [
-        {"": "Sub-Fund", "Total Return": f"{port_ret_week * 100:+.3f}%",
-         "Market \u03b2": f"{week_beta_map.get('Market', 0):.3f}",
-         "Value \u03b2": f"{week_beta_map.get('Value', 0):.3f}",
-         "Momentum \u03b2": f"{week_beta_map.get('Momentum', 0):.3f}",
-         "Growth \u03b2": f"{week_beta_map.get('Growth', 0):.3f}"},
-        {"": "Factor Returns", "Total Return": "",
-         "Market \u03b2": f"{factor_rets_week.get('Market', 0) * 100:+.3f}%",
-         "Value \u03b2": f"{factor_rets_week.get('Value', 0) * 100:+.3f}%",
-         "Momentum \u03b2": f"{factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-         "Growth \u03b2": f"{factor_rets_week.get('Growth', 0) * 100:+.3f}%"},
-        {"": "Imputed Return", "Total Return": f"{imputed_total * 100:+.3f}%",
-         "Market \u03b2": f"{week_beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
-         "Value \u03b2": f"{week_beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
-         "Momentum \u03b2": f"{week_beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-         "Growth \u03b2": f"{week_beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%"},
-        {"": "Alpha", "Total Return": f"{alpha_residual * 100:+.3f}%",
-         "Market \u03b2": "", "Value \u03b2": "", "Momentum \u03b2": "", "Growth \u03b2": ""},
-    ]
-
-    # Excess Return table
-    excess_port = port_ret_week - spy_ret_week
-    excess_imputed = imputed_total - spy_ret_week
-    excess_alpha = excess_port - imputed_total
-
-    excess_rows = [
-        {"": "Sub-Fund (Excess)", "Total Return": f"{excess_port * 100:+.3f}%",
-         "Market \u03b2": f"{week_beta_map.get('Market', 0):.3f}",
-         "Value \u03b2": f"{week_beta_map.get('Value', 0):.3f}",
-         "Momentum \u03b2": f"{week_beta_map.get('Momentum', 0):.3f}",
-         "Growth \u03b2": f"{week_beta_map.get('Growth', 0):.3f}"},
-        {"": "SPY Return", "Total Return": f"{spy_ret_week * 100:+.3f}%",
-         "Market \u03b2": "", "Value \u03b2": "", "Momentum \u03b2": "", "Growth \u03b2": ""},
-        {"": "Factor Returns", "Total Return": "",
-         "Market \u03b2": f"{factor_rets_week.get('Market', 0) * 100:+.3f}%",
-         "Value \u03b2": f"{factor_rets_week.get('Value', 0) * 100:+.3f}%",
-         "Momentum \u03b2": f"{factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-         "Growth \u03b2": f"{factor_rets_week.get('Growth', 0) * 100:+.3f}%"},
-        {"": "Imputed Excess Return", "Total Return": f"{excess_imputed * 100:+.3f}%",
-         "Market \u03b2": f"{week_beta_map.get('Market', 0) * factor_rets_week.get('Market', 0) * 100:+.3f}%",
-         "Value \u03b2": f"{week_beta_map.get('Value', 0) * factor_rets_week.get('Value', 0) * 100:+.3f}%",
-         "Momentum \u03b2": f"{week_beta_map.get('Momentum', 0) * factor_rets_week.get('Momentum', 0) * 100:+.3f}%",
-         "Growth \u03b2": f"{week_beta_map.get('Growth', 0) * factor_rets_week.get('Growth', 0) * 100:+.3f}%"},
-        {"": "Alpha", "Total Return": f"{excess_alpha * 100:+.3f}%",
-         "Market \u03b2": "", "Value \u03b2": "", "Momentum \u03b2": "", "Growth \u03b2": ""},
-    ]
-
-    return {
-        "label": label,
-        "abs_rows": abs_rows,
-        "excess_rows": excess_rows,
-    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────
@@ -656,9 +533,12 @@ async def subfund_page(request: Request, fund_slug: str):
         ctx["holdings_table"] = []
         ctx["holdings_pie"] = None
 
-    # Sector exposure
+    # Read pre-computed extras from background cache
+    extras = cache.get("fund_extras", {}).get(name, {})
+
+    # Sector exposure (pre-computed sectors dict)
     if not holdings.empty:
-        sectors = pf.get_sectors(holdings["Ticker"].tolist())
+        sectors = extras.get("sectors", {})
         sector_df = holdings.copy()
         sector_df["Sector"] = sector_df["Ticker"].map(sectors).fillna("Other")
         sector_agg = sector_df.groupby("Sector")["Weight (%)"].sum().reset_index()
@@ -672,60 +552,29 @@ async def subfund_page(request: Request, fund_slug: str):
         ctx["sector_table"] = []
         ctx["sector_pie"] = None
 
-    # Factor exposure
-    start_str = (d["first_date"] - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
-    end_str = (d["end_date"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-
-    ff_result = pf.compute_factor_betas(rets, holdings, start_str, end_str)
-    ff_betas_copy = dict(ff_result)
+    # Factor exposure (pre-computed)
+    ff_result = dict(extras.get("ff_betas", {}))
     ctx["ff_factors"] = _format_factor_result(ff_result)
 
-    etf_result = pf.compute_etf_factor_betas(rets, start_str, end_str)
+    etf_result = dict(extras.get("etf_betas", {}))
     ctx["etf_factors"] = _format_factor_result(etf_result)
 
-    # Weekly Return Attribution
-    ctx["weekly_attribution_blocks"] = _build_weekly_attribution(name, rets, holdings, start_str, end_str, subfund_data)
+    # Weekly Return Attribution (pre-computed)
+    ctx["weekly_attribution_blocks"] = extras.get("weekly_attribution_blocks", [])
 
-    # Weekly Factor Attribution
-    etf_betas = pf.compute_etf_factor_betas(rets, start_str, end_str)
-    weekly_attr = pf.weekly_factor_attribution(rets, etf_betas, start_str, end_str)
-    if not weekly_attr.empty:
-        wa_display = []
-        for _, row in weekly_attr.iterrows():
-            r = {}
-            for col in weekly_attr.columns:
-                if col == "Week Ending":
-                    r[col] = row[col]
-                else:
-                    r[col] = f"{row[col]:+.3f}%"
-            wa_display.append(r)
-        ctx["weekly_factor_attr"] = wa_display
-        ctx["weekly_factor_cols"] = weekly_attr.columns.tolist()
-    else:
-        ctx["weekly_factor_attr"] = []
-        ctx["weekly_factor_cols"] = []
+    # Weekly Factor Attribution (pre-computed)
+    ctx["weekly_factor_attr"] = extras.get("weekly_factor_attr", [])
+    ctx["weekly_factor_cols"] = extras.get("weekly_factor_cols", [])
 
-    # Weekly Theme Attribution (Thematic only)
+    # Weekly Theme Attribution (pre-computed, Thematic only)
     if name == "Thematic":
-        theme_map = pf.load_theme_map()
-        weekly_theme = pf.weekly_theme_attribution(rets, holdings, theme_map, start_str, end_str)
-        if not weekly_theme.empty:
-            ctx["theme_bar_chart"] = fig_to_json(make_theme_attribution_bar(weekly_theme))
-            wt_display = []
-            for _, row in weekly_theme.iterrows():
-                r = {}
-                for col in weekly_theme.columns:
-                    if col == "Week Ending":
-                        r[col] = row[col]
-                    else:
-                        r[col] = f"{row[col]:+.3f}%"
-                wt_display.append(r)
-            ctx["weekly_theme_attr"] = wt_display
-            ctx["weekly_theme_cols"] = weekly_theme.columns.tolist()
+        weekly_theme_raw = extras.get("weekly_theme_raw")
+        if weekly_theme_raw is not None and not weekly_theme_raw.empty:
+            ctx["theme_bar_chart"] = fig_to_json(make_theme_attribution_bar(weekly_theme_raw))
         else:
             ctx["theme_bar_chart"] = None
-            ctx["weekly_theme_attr"] = []
-            ctx["weekly_theme_cols"] = []
+        ctx["weekly_theme_attr"] = extras.get("weekly_theme_attr", [])
+        ctx["weekly_theme_cols"] = extras.get("weekly_theme_cols", [])
     else:
         ctx["theme_bar_chart"] = None
         ctx["weekly_theme_attr"] = []

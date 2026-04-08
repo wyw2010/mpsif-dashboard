@@ -90,38 +90,32 @@
 <!-- Current Holdings -->
 {% if holdings_table %}
 <div class="section-header">Current Holdings</div>
-<div class="row">
-    <div class="col-1">
-        <div class="chart-container" id="holdings-pie"></div>
-    </div>
-    <div class="col-2">
-        <div class="table-wrap" style="max-height: 450px;">
-            <table class="clean-table" id="holdings-table">
-                <thead>
-                    <tr>
-                        <th>Ticker<span class="sort-arrow"></span></th>
-                        <th>Shares<span class="sort-arrow"></span></th>
-                        <th>Weight (%)<span class="sort-arrow"> &#x25bc;</span></th>
-                        <th>Avg Price ($)<span class="sort-arrow"></span></th>
-                        <th>Price ($)<span class="sort-arrow"></span></th>
-                        <th>P&amp;L ($)<span class="sort-arrow"></span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in holdings_table %}
-                    <tr>
-                        <td>{{ row["Ticker"] }}</td>
-                        <td data-sv="{{ row._shares_raw }}">{{ row["Shares"] }}</td>
-                        <td data-sv="{{ row._weight_raw }}">{{ row["Weight (%)"] }}</td>
-                        <td data-sv="{{ row._avg_raw }}">{{ row["Avg Price ($)"] }}</td>
-                        <td data-sv="{{ row._price_raw }}">{{ row["Price ($)"] }}</td>
-                        <td data-sv="{{ row._pnl_raw }}">{{ row["P&L ($)"] }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="chart-container" id="holdings-pie"></div>
+<div class="table-wrap" style="max-height: 450px; margin-top: 1rem;">
+    <table class="clean-table" id="holdings-table">
+        <thead>
+            <tr>
+                <th>Ticker<span class="sort-arrow"></span></th>
+                <th>Shares<span class="sort-arrow"></span></th>
+                <th>Weight (%)<span class="sort-arrow"> &#x25bc;</span></th>
+                <th>Avg Price ($)<span class="sort-arrow"></span></th>
+                <th>Price ($)<span class="sort-arrow"></span></th>
+                <th>P&amp;L ($)<span class="sort-arrow"></span></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in holdings_table %}
+            <tr>
+                <td>{{ row["Ticker"] }}</td>
+                <td data-sv="{{ row._shares_raw }}">{{ row["Shares"] }}</td>
+                <td data-sv="{{ row._weight_raw }}">{{ row["Weight (%)"] }}</td>
+                <td data-sv="{{ row._avg_raw }}">{{ row["Avg Price ($)"] }}</td>
+                <td data-sv="{{ row._price_raw }}">{{ row["Price ($)"] }}</td>
+                <td data-sv="{{ row._pnl_raw }}">{{ row["P&L ($)"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endif %}
 
