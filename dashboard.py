@@ -341,7 +341,7 @@ def _extract_beta_map(betas_dict):
 
 def _build_weekly_attribution(name, rets, holdings, start_str, end_str, subfund_data):
     """Build weekly return attribution data for a sub-fund."""
-    factor_data = pd.read_pickle('data.pk')
+    factor_data = pd.read_parquet('data.parquet')
     factor_data.index = pd.to_datetime(factor_data.index).normalize()
     factor_data = factor_data.rename(columns={'mkt': 'Market', 'momentum': 'Momentum', 'growth': 'Growth', 'value': 'Value'})
 
