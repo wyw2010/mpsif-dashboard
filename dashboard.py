@@ -465,7 +465,6 @@ async def overview(request: Request):
     combined_rets = cache.get("combined_rets", pd.Series(dtype=float))
 
     ctx = {
-        "request": request,
         "active_page": "overview",
         "subfunds": pf.SUBFUNDS,
         "logo_b64": LOGO_B64,
@@ -474,7 +473,7 @@ async def overview(request: Request):
     }
 
     if not subfund_data or combined_rets.empty:
-        return templates.TemplateResponse("overview.html", ctx)
+        return templates.TemplateResponse(request, "overview.html", ctx)
 
     # Period returns
     period_rets = pf.period_returns(combined_rets)
@@ -545,7 +544,7 @@ async def overview(request: Request):
     else:
         ctx["correlation_chart"] = None
 
-    return templates.TemplateResponse("overview.html", ctx)
+    return templates.TemplateResponse(request, "overview.html", ctx)
 
 
 @app.get("/fund/{fund_slug}")
@@ -561,7 +560,6 @@ async def subfund_page(request: Request, fund_slug: str):
     benchmark_rets = cache.get("benchmark_rets", {})
 
     ctx = {
-        "request": request,
         "active_page": fund_slug,
         "subfunds": pf.SUBFUNDS,
         "logo_b64": LOGO_B64,
@@ -572,7 +570,7 @@ async def subfund_page(request: Request, fund_slug: str):
     }
 
     if name not in subfund_data:
-        return templates.TemplateResponse("subfund.html", ctx)
+        return templates.TemplateResponse(request, "subfund.html", ctx)
 
     d = subfund_data[name]
     rets = d["returns"]
@@ -584,7 +582,7 @@ async def subfund_page(request: Request, fund_slug: str):
 
     if rets.empty:
         ctx["has_data"] = False
-        return templates.TemplateResponse("subfund.html", ctx)
+        return templates.TemplateResponse(request, "subfund.html", ctx)
 
     # Period returns
     pr = pf.period_returns(rets)
@@ -775,7 +773,7 @@ async def subfund_page(request: Request, fund_slug: str):
     else:
         ctx["bond_entries"] = []
 
-    return templates.TemplateResponse("subfund.html", ctx)
+    return templates.TemplateResponse(request, "subfund.html", ctx)
 
 
 def _get_period_slices(rets):
@@ -833,7 +831,6 @@ async def upload_page(request: Request, msg: str = "", error: str = ""):
     default_friday = (today - pd.Timedelta(days=days_since_friday)).strftime("%Y-%m-%d")
 
     ctx = {
-        "request": request,
         "active_page": "upload",
         "subfunds": pf.SUBFUNDS,
         "logo_b64": LOGO_B64,
@@ -844,7 +841,7 @@ async def upload_page(request: Request, msg: str = "", error: str = ""):
         "error": error,
         "plotly_cfg": json.dumps(PLOTLY_CFG),
     }
-    return templates.TemplateResponse("upload.html", ctx)
+    return templates.TemplateResponse(request, "upload.html", ctx)
 
 
 @app.post("/upload/transactions")
