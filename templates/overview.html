@@ -117,19 +117,16 @@
 <script>
 {% if has_data and period_rets %}
 // Multi-fund chart
-var multiFundData = {{ multi_fund_chart | safe }};
-var multiFundParsed = JSON.parse(multiFundData);
+var multiFundParsed = {{ multi_fund_chart | safe }};
 Plotly.newPlot('multi-fund-chart', multiFundParsed.data, multiFundParsed.layout, PLOTLY_CFG);
 
 // Drawdown chart
-var ddData = {{ drawdown_chart | safe }};
-var ddParsed = JSON.parse(ddData);
+var ddParsed = {{ drawdown_chart | safe }};
 Plotly.newPlot('drawdown-chart', ddParsed.data, ddParsed.layout, PLOTLY_CFG);
 
 // Correlation heatmap
 {% if correlation_chart %}
-var corrData = {{ correlation_chart | safe }};
-var corrParsed = JSON.parse(corrData);
+var corrParsed = {{ correlation_chart | safe }};
 Plotly.newPlot('correlation-chart', corrParsed.data, corrParsed.layout, PLOTLY_CFG);
 {% endif %}
 

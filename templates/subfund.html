@@ -408,7 +408,7 @@ var currentPeriod = 'ytd';
 
 // Parse and render initial chart
 function renderReturnChart(period) {
-    var data = JSON.parse(chartData[period]);
+    var data = chartData[period];
     Plotly.newPlot('return-chart', data.data, data.layout, PLOTLY_CFG);
 }
 renderReturnChart('ytd');
@@ -434,7 +434,7 @@ function applyCustomRange() {
     var startDate = document.getElementById('custom-start').value;
     var endDate = document.getElementById('custom-end').value;
     // Use the 'all' chart data and relayout to zoom
-    var data = JSON.parse(chartData['all']);
+    var data = chartData['all'];
     Plotly.newPlot('return-chart', data.data, data.layout, PLOTLY_CFG);
     Plotly.relayout('return-chart', {
         'xaxis.range': [startDate, endDate]
@@ -442,24 +442,24 @@ function applyCustomRange() {
 }
 
 // Drawdown chart
-var ddData = JSON.parse({{ drawdown_chart | safe }});
+var ddData = {{ drawdown_chart | safe }};
 Plotly.newPlot('drawdown-chart', ddData.data, ddData.layout, PLOTLY_CFG);
 
 // Holdings pie
 {% if holdings_pie %}
-var holdingsPie = JSON.parse({{ holdings_pie | safe }});
+var holdingsPie = {{ holdings_pie | safe }};
 Plotly.newPlot('holdings-pie', holdingsPie.data, holdingsPie.layout, PLOTLY_CFG);
 {% endif %}
 
 // Sector pie
 {% if sector_pie %}
-var sectorPie = JSON.parse({{ sector_pie | safe }});
+var sectorPie = {{ sector_pie | safe }};
 Plotly.newPlot('sector-pie', sectorPie.data, sectorPie.layout, PLOTLY_CFG);
 {% endif %}
 
 // Theme bar chart
 {% if theme_bar_chart %}
-var themeBar = JSON.parse({{ theme_bar_chart | safe }});
+var themeBar = {{ theme_bar_chart | safe }};
 Plotly.newPlot('theme-bar-chart', themeBar.data, themeBar.layout, PLOTLY_CFG);
 {% endif %}
 
