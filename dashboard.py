@@ -207,43 +207,36 @@ def make_multi_fund_chart(fund_data, visible, height=400):
     return fig
 
 
-def make_holdings_pie(holdings_df, height=400):
+def make_holdings_pie(holdings_df, height=400, max_slices=10):
     if holdings_df.empty:
         return go.Figure()
-    df = holdings_df.copy()
-    threshold = 2.0
-    small = df[df["Weight (%)"] < threshold]
-    large = df[df["Weight (%)"] >= threshold]
-    if len(small) > 0:
+    df = holdings_df.copy().sort_values("Weight (%)", ascending=False)
+    # Keep top N slices, group rest into "Other"
+    if len(df) > max_slices:
+        top = df.iloc[:max_slices]
+        rest = df.iloc[max_slices:]
         other = pd.DataFrame([{
-            "Ticker": f"Other ({len(small)})",
-            "Weight (%)": small["Weight (%)"].sum(),
-            "Value ($)": small["Value ($)"].sum(),
+            "Ticker": f"Other ({len(rest)})",
+            "Weight (%)": rest["Weight (%)"].sum(),
+            "Value ($)": rest["Value ($)"].sum() if "Value ($)" in rest.columns else 0,
         }])
-        df = pd.concat([large, other], ignore_index=True)
-    else:
-        df = large
-    df = df.sort_values("Weight (%)", ascending=False)
+        df = pd.concat([top, other], ignore_index=True)
     fig = go.Figure(go.Pie(
         labels=df["Ticker"].tolist(), values=df["Weight (%)"].tolist(), hole=0.45,
         textinfo="label+percent", textfont_size=11,
-        textposition="auto",
+        textposition="inside",
+        insidetextorientation="horizontal",
         marker=dict(colors=[
             NYU_PURPLE, "#8900e1", "#2563EB", "#3B82F6", "#60A5FA",
             "#D97706", "#F59E0B", "#059669", "#10B981", "#34D399",
-            "#EF4444", "#6366F1", "#8B5CF6", "#EC4899", "#F97316",
-            "#14B8A6", "#64748B", "#A78BFA", "#FB923C", "#4ADE80",
+            "#EF4444",
         ]),
         hovertemplate="%{label}<br>Weight: %{value:.3f}%<extra></extra>",
     ))
     fig.update_layout(
         height=height, margin=dict(l=20, r=20, t=10, b=10),
         paper_bgcolor=WHITE, font=_PLOTLY_FONT,
-        showlegend=True,
-        legend=dict(
-            orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5,
-            font=dict(size=11),
-        ),
+        showlegend=False,
     )
     return fig
 
