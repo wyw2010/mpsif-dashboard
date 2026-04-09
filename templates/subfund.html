@@ -151,8 +151,8 @@
 </div>
 {% endif %}
 
-<!-- Factor Exposure (Fama-French) -->
-{% if ff_factors %}
+<!-- Factor Exposure (Fama-French) — hidden for Systematic -->
+{% if ff_factors and fund_name != "Systematic" %}
 <div class="section-header">Factor Exposure</div>
 <div class="metrics-row">
     <div class="metric-card">
@@ -276,6 +276,12 @@
         <div class="metric-value">{{ (portfolio_regression_ex_mom.idio_vol * 100) | fmt_pct }}</div>
     </div>
 </div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+{% if factor_corr_chart %}
+<div class="section-header">Factor Correlation Matrix</div>
+<div class="chart-container" id="factor-corr-chart"></div>
 <div style="margin-top: 1.5rem;"></div>
 {% endif %}
 
@@ -525,6 +531,12 @@ Plotly.newPlot('holdings-pie', holdingsPie.data, holdingsPie.layout, PLOTLY_CFG)
 {% if sector_pie %}
 var sectorPie = {{ sector_pie | safe }};
 Plotly.newPlot('sector-pie', sectorPie.data, sectorPie.layout, PLOTLY_CFG);
+{% endif %}
+
+// Factor correlation heatmap
+{% if factor_corr_chart %}
+var factorCorr = {{ factor_corr_chart | safe }};
+Plotly.newPlot('factor-corr-chart', factorCorr.data, factorCorr.layout, PLOTLY_CFG);
 {% endif %}
 
 // Theme bar chart

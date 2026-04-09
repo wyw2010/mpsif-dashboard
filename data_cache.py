@@ -187,6 +187,19 @@ def _precompute_fund_extras(name, d):
             log.warning(f"  portfolio_regression_ex_mom failed: {e}")
             extras["portfolio_regression_ex_mom"] = {}
 
+        # 4. Factor correlation matrix
+        try:
+            factor_data = pd.read_parquet('data.parquet')
+            factor_data.index = pd.to_datetime(factor_data.index).normalize()
+            fd = factor_data.loc[pd.to_datetime(start_str):pd.to_datetime(end_str)]
+            if len(fd) >= 10:
+                extras["factor_corr"] = fd.corr()
+            else:
+                extras["factor_corr"] = None
+        except Exception as e:
+            log.warning(f"  factor_corr failed: {e}")
+            extras["factor_corr"] = None
+
     # Sector exposure
     if not holdings.empty:
         try:

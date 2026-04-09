@@ -318,6 +318,30 @@ def make_correlation_heatmap(subfund_data, height=300):
     return fig
 
 
+def make_factor_correlation_heatmap(corr_matrix, height=300):
+    """Build a heatmap of factor-factor correlations."""
+    labels = corr_matrix.columns.tolist()
+    LABEL_MAP = {"mkt": "Market", "momentum": "Momentum", "growth": "Growth", "value": "Value"}
+    display_labels = [LABEL_MAP.get(l, l.title()) for l in labels]
+    fig = go.Figure(go.Heatmap(
+        z=corr_matrix.values.tolist(),
+        x=display_labels, y=display_labels,
+        colorscale=[[0, "#DC2626"], [0.5, WHITE], [1, NYU_PURPLE]],
+        zmin=-1, zmax=1,
+        text=[[f"{v:.3f}" for v in row] for row in corr_matrix.values],
+        texttemplate="%{text}",
+        textfont=dict(size=14),
+        hovertemplate="%{x} vs %{y}: %{z:.3f}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=height, margin=dict(l=0, r=0, t=10, b=0),
+        paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        font=dict(family="'Helvetica Neue', Helvetica, Arial, sans-serif", weight=300),
+        xaxis=dict(side="bottom"),
+    )
+    return fig
+
+
 def fig_to_json(fig):
     """Convert a Plotly figure to a JSON string for client-side rendering."""
     return fig.to_json()
@@ -555,10 +579,16 @@ async def subfund_page(request: Request, fund_slug: str):
         ctx["fund_regression"] = _format_factor_result(dict(extras.get("fund_regression", {})))
         ctx["portfolio_regression"] = _format_factor_result(dict(extras.get("portfolio_regression", {})))
         ctx["portfolio_regression_ex_mom"] = _format_factor_result(dict(extras.get("portfolio_regression_ex_mom", {})))
+        factor_corr = extras.get("factor_corr")
+        if factor_corr is not None:
+            ctx["factor_corr_chart"] = fig_to_json(make_factor_correlation_heatmap(factor_corr))
+        else:
+            ctx["factor_corr_chart"] = None
     else:
         ctx["fund_regression"] = None
         ctx["portfolio_regression"] = None
         ctx["portfolio_regression_ex_mom"] = None
+        ctx["factor_corr_chart"] = None
 
     # Weekly Return Attribution (pre-computed)
     ctx["weekly_attribution_blocks"] = extras.get("weekly_attribution_blocks", [])
