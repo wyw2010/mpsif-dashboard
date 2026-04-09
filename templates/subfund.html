@@ -280,10 +280,12 @@
 {% endif %}
 
 {% if portfolio_regression_ortho %}
-<div class="section-header">Current Portfolio Regression (Orthogonalized)</div>
+<div class="section-header">Current Portfolio Regression (Pure Factors)</div>
 <p style="color: #6B7280; font-size: 0.85rem; margin: -0.5rem 0 0.75rem 0;">
-    Factors orthogonalized in order: Market &rarr; Value &rarr; Growth &rarr; Momentum.
-    Each beta reflects pure exposure after removing overlap with prior factors.
+    Each factor is regressed on all other factors and replaced with the residual,
+    producing mutually orthogonal &ldquo;pure&rdquo; factor series. Betas reflect
+    exposure to the unique component of each factor with no shared variance.
+    Order-independent &mdash; no factor gets priority.
 </p>
 <div class="metrics-row">
     <div class="metric-card">
