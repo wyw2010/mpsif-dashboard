@@ -1274,6 +1274,111 @@ def regress_on_factors(
     return result
 
 
+def regress_on_orthogonalized_factors(
+    returns: pd.Series,
+    start: str,
+    end: str,
+    order: list[str] | None = None,
+) -> dict:
+    """Regress returns on sequentially orthogonalized factors.
+
+    Uses Gram-Schmidt via OLS: each factor is regressed on all preceding
+    factors and replaced with the residual. The resulting betas represent
+    pure exposure to each factor after removing overlap with prior factors.
+
+    Parameters
+    ----------
+    returns : daily return series
+    start, end : date range
+    order : factor column names in desired priority order.
+            Defaults to ["mkt", "value", "growth", "momentum"].
+    """
+    from scipy import stats as sp_stats
+
+    factor_data = pd.read_parquet('data.parquet')
+    if factor_data.empty:
+        return {}
+
+    factor_data.index = pd.to_datetime(factor_data.index).normalize()
+    start_dt, end_dt = pd.to_datetime(start), pd.to_datetime(end)
+    factor_rets = factor_data.loc[start_dt:end_dt].copy()
+
+    if order is None:
+        order = ["mkt", "value", "growth", "momentum"]
+    # Only keep columns that exist
+    order = [c for c in order if c in factor_rets.columns]
+    if not order:
+        return {}
+
+    port_clean = returns.copy()
+    port_clean.index = pd.to_datetime(port_clean.index).normalize()
+
+    aligned = pd.concat(
+        [port_clean.rename("port"), factor_rets[order]], axis=1
+    ).dropna()
+
+    if len(aligned) < 10:
+        return {}
+
+    # Sequential orthogonalization
+    ortho = pd.DataFrame(index=aligned.index)
+    for i, col in enumerate(order):
+        raw = aligned[col].values.astype(np.float64)
+        if i == 0:
+            ortho[col] = raw
+        else:
+            # Regress on all preceding orthogonalized factors
+            prior = ortho.values
+            X_prior = np.column_stack([np.ones(len(prior)), prior])
+            c, _, _, _ = np.linalg.lstsq(X_prior, raw, rcond=None)
+            ortho[col] = raw - X_prior @ c
+
+    # Regress portfolio returns on orthogonalized factors
+    y = aligned["port"].values.astype(np.float64)
+    X = ortho.values.astype(np.float64)
+    X = np.column_stack([np.ones(len(X)), X])
+
+    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    y_hat = X @ coeffs
+    residuals = y - y_hat
+    n, k = X.shape
+
+    ss_res = float(np.sum(residuals ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    mse = ss_res / max(n - k, 1)
+    XtX_inv = np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(XtX_inv) * mse)
+    t_stats = coeffs / se
+    p_values = [2 * (1 - sp_stats.t.cdf(abs(t), df=max(n - k, 1))) for t in t_stats]
+
+    alpha_daily = float(coeffs[0])
+    idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
+
+    FACTOR_LABEL_MAP = {"mkt": "Market", "momentum": "Momentum",
+                        "growth": "Growth", "value": "Value"}
+
+    result = {
+        "_alpha": round(alpha_daily * 252, 6),
+        "_idio_vol": round(idio_vol, 3),
+        "_r_squared": round(r_squared, 3),
+        "_alpha_t": round(float(t_stats[0]), 3),
+        "_alpha_p": round(float(p_values[0]), 3),
+        "_stats": {},
+    }
+    for i, fname in enumerate(order):
+        label = FACTOR_LABEL_MAP.get(fname, fname.title())
+        result[label] = round(float(coeffs[i + 1]), 3)
+        result["_stats"][label] = {
+            "t_stat": round(float(t_stats[i + 1]), 3),
+            "p_value": round(float(p_values[i + 1]), 3),
+        }
+
+    log.info(f"regress_on_orthogonalized_factors: {result}")
+    return result
+
+
 def construct_portfolio_returns(
     holdings_df: pd.DataFrame,
     start: str,

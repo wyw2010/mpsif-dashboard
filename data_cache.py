@@ -187,7 +187,19 @@ def _precompute_fund_extras(name, d):
             log.warning(f"  portfolio_regression_ex_mom failed: {e}")
             extras["portfolio_regression_ex_mom"] = {}
 
-        # 4. Factor correlation matrix
+        # 4. Current portfolio orthogonalized regression
+        try:
+            if not port_rets.empty:
+                extras["portfolio_regression_ortho"] = pf.regress_on_orthogonalized_factors(
+                    port_rets, start_str, end_str
+                )
+            else:
+                extras["portfolio_regression_ortho"] = {}
+        except Exception as e:
+            log.warning(f"  portfolio_regression_ortho failed: {e}")
+            extras["portfolio_regression_ortho"] = {}
+
+        # 5. Factor correlation matrix
         try:
             factor_data = pd.read_parquet('data.parquet')
             factor_data.index = pd.to_datetime(factor_data.index).normalize()

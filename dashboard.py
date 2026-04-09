@@ -579,6 +579,7 @@ async def subfund_page(request: Request, fund_slug: str):
         ctx["fund_regression"] = _format_factor_result(dict(extras.get("fund_regression", {})))
         ctx["portfolio_regression"] = _format_factor_result(dict(extras.get("portfolio_regression", {})))
         ctx["portfolio_regression_ex_mom"] = _format_factor_result(dict(extras.get("portfolio_regression_ex_mom", {})))
+        ctx["portfolio_regression_ortho"] = _format_factor_result(dict(extras.get("portfolio_regression_ortho", {})))
         factor_corr = extras.get("factor_corr")
         if factor_corr is not None:
             ctx["factor_corr_chart"] = fig_to_json(make_factor_correlation_heatmap(factor_corr))
@@ -588,6 +589,7 @@ async def subfund_page(request: Request, fund_slug: str):
         ctx["fund_regression"] = None
         ctx["portfolio_regression"] = None
         ctx["portfolio_regression_ex_mom"] = None
+        ctx["portfolio_regression_ortho"] = None
         ctx["factor_corr_chart"] = None
 
     # Weekly Return Attribution (pre-computed)

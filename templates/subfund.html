@@ -279,6 +279,35 @@
 <div style="margin-top: 1.5rem;"></div>
 {% endif %}
 
+{% if portfolio_regression_ortho %}
+<div class="section-header">Current Portfolio Regression (Orthogonalized)</div>
+<p style="color: #6B7280; font-size: 0.85rem; margin: -0.5rem 0 0.75rem 0;">
+    Factors orthogonalized in order: Market &rarr; Value &rarr; Growth &rarr; Momentum.
+    Each beta reflects pure exposure after removing overlap with prior factors.
+</p>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(portfolio_regression_ortho.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ portfolio_regression_ortho.alpha | color_class }}">{{ (portfolio_regression_ortho.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in portfolio_regression_ortho.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (portfolio_regression_ortho.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
 {% if factor_corr_chart %}
 <div class="section-header">Factor Correlation Matrix</div>
 <div class="chart-container" id="factor-corr-chart"></div>
