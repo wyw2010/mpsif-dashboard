@@ -155,6 +155,38 @@ def _precompute_fund_extras(name, d):
         log.warning(f"  etf_betas failed for {name}: {e}")
         extras["etf_betas"] = {}
 
+    # Systematic-specific: 3 top-down regressions
+    if name == "Systematic":
+        # 1. Fund regression (actual fund returns vs all factors)
+        try:
+            extras["fund_regression"] = pf.regress_on_factors(rets, start_str, end_str)
+        except Exception as e:
+            log.warning(f"  fund_regression failed: {e}")
+            extras["fund_regression"] = {}
+
+        # 2. Current portfolio regression (holdings-weighted returns vs all factors)
+        try:
+            port_rets = pf.construct_portfolio_returns(holdings, start_str, end_str)
+            if not port_rets.empty:
+                extras["portfolio_regression"] = pf.regress_on_factors(port_rets, start_str, end_str)
+            else:
+                extras["portfolio_regression"] = {}
+        except Exception as e:
+            log.warning(f"  portfolio_regression failed: {e}")
+            extras["portfolio_regression"] = {}
+
+        # 3. Current portfolio ex-Momentum (same as #2 but drop momentum)
+        try:
+            if not port_rets.empty:
+                extras["portfolio_regression_ex_mom"] = pf.regress_on_factors(
+                    port_rets, start_str, end_str, exclude_factors=["momentum"]
+                )
+            else:
+                extras["portfolio_regression_ex_mom"] = {}
+        except Exception as e:
+            log.warning(f"  portfolio_regression_ex_mom failed: {e}")
+            extras["portfolio_regression_ex_mom"] = {}
+
     # Sector exposure
     if not holdings.empty:
         try:

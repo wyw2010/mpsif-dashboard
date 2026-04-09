@@ -1185,7 +1185,141 @@ def _compute_factor_betas_uncached(
     log.info(f"Factor betas: {result}")
     return result
 
-    
+
+def regress_on_factors(
+    returns: pd.Series,
+    start: str,
+    end: str,
+    exclude_factors: list | None = None,
+) -> dict:
+    """Direct top-down OLS of returns on custom factors from data.parquet.
+
+    Parameters
+    ----------
+    returns : daily return series to regress
+    start, end : date range strings
+    exclude_factors : list of factor names to drop (e.g. ["momentum"])
+    """
+    from scipy import stats as sp_stats
+
+    factor_data = pd.read_parquet('data.parquet')
+    if factor_data.empty:
+        return {}
+
+    factor_data.index = pd.to_datetime(factor_data.index).normalize()
+    start_dt, end_dt = pd.to_datetime(start), pd.to_datetime(end)
+    factor_rets = factor_data.loc[start_dt:end_dt].copy()
+
+    if exclude_factors:
+        drop_cols = [c for c in factor_rets.columns
+                     if any(e.lower() == c.lower() for e in exclude_factors)]
+        factor_rets = factor_rets.drop(columns=drop_cols)
+
+    factor_names = list(factor_rets.columns)
+    if not factor_names:
+        return {}
+
+    port_clean = returns.copy()
+    port_clean.index = pd.to_datetime(port_clean.index).normalize()
+
+    aligned = pd.concat(
+        [port_clean.rename("port"), factor_rets], axis=1
+    ).dropna()
+
+    if len(aligned) < 10:
+        return {}
+
+    y = aligned["port"].values.astype(np.float64)
+    X = aligned[factor_names].values.astype(np.float64)
+    X = np.column_stack([np.ones(len(X)), X])
+
+    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    y_hat = X @ coeffs
+    residuals = y - y_hat
+    n, k = X.shape
+
+    ss_res = float(np.sum(residuals ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    mse = ss_res / max(n - k, 1)
+    XtX_inv = np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(XtX_inv) * mse)
+    t_stats = coeffs / se
+    p_values = [2 * (1 - sp_stats.t.cdf(abs(t), df=max(n - k, 1))) for t in t_stats]
+
+    alpha_daily = float(coeffs[0])
+    idio_vol = float(np.std(residuals, ddof=1) * np.sqrt(252))
+
+    FACTOR_LABEL_MAP = {"mkt": "Market", "momentum": "Momentum",
+                        "growth": "Growth", "value": "Value"}
+
+    result = {
+        "_alpha": round(alpha_daily * 252, 6),
+        "_idio_vol": round(idio_vol, 3),
+        "_r_squared": round(r_squared, 3),
+        "_alpha_t": round(float(t_stats[0]), 3),
+        "_alpha_p": round(float(p_values[0]), 3),
+        "_stats": {},
+    }
+    for i, fname in enumerate(factor_names):
+        label = FACTOR_LABEL_MAP.get(fname, fname.title())
+        result[label] = round(float(coeffs[i + 1]), 3)
+        result["_stats"][label] = {
+            "t_stat": round(float(t_stats[i + 1]), 3),
+            "p_value": round(float(p_values[i + 1]), 3),
+        }
+
+    log.info(f"regress_on_factors (exclude={exclude_factors}): {result}")
+    return result
+
+
+def construct_portfolio_returns(
+    holdings_df: pd.DataFrame,
+    start: str,
+    end: str,
+) -> pd.Series:
+    """Construct daily returns from current holdings weights.
+
+    Assumes constant weights (today's snapshot) held over the entire period.
+    Returns a daily return series that is the weighted average of individual
+    stock returns.
+    """
+    if holdings_df is None or holdings_df.empty:
+        return pd.Series(dtype=float)
+
+    weight_map = {}
+    for _, row in holdings_df.iterrows():
+        t = row.get("Ticker", row.get("Symbol", ""))
+        w = row.get("Weight (%)", row.get("Weight", 0))
+        if isinstance(w, (int, float)) and pd.notna(w) and not _is_cusip(t):
+            weight_map[t] = w / 100.0
+
+    if not weight_map:
+        return pd.Series(dtype=float)
+
+    tickers = list(weight_map.keys())
+    prices = fetch_prices(tickers, start, end)
+    if prices.empty:
+        return pd.Series(dtype=float)
+
+    daily_rets = prices.pct_change().dropna()
+    daily_rets.index = pd.to_datetime(daily_rets.index).normalize()
+
+    # Only keep tickers we have data for, renormalize weights
+    available = [t for t in tickers if t in daily_rets.columns]
+    if not available:
+        return pd.Series(dtype=float)
+
+    total_w = sum(weight_map[t] for t in available)
+    if total_w <= 0:
+        return pd.Series(dtype=float)
+
+    port_rets = sum(
+        (weight_map[t] / total_w) * daily_rets[t] for t in available
+    )
+    return port_rets.dropna()
+
 
 def compute_etf_factor_betas(port_rets: pd.Series, start: str, end: str) -> dict:
     """Compute factor betas via ETF proxy regression."""

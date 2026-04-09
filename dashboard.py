@@ -548,9 +548,17 @@ async def subfund_page(request: Request, fund_slug: str):
     # Factor exposure (pre-computed)
     ff_result = dict(extras.get("ff_betas", {}))
     ctx["ff_factors"] = _format_factor_result(ff_result)
-
     etf_result = dict(extras.get("etf_betas", {}))
     ctx["etf_factors"] = _format_factor_result(etf_result)
+
+    if name == "Systematic":
+        ctx["fund_regression"] = _format_factor_result(dict(extras.get("fund_regression", {})))
+        ctx["portfolio_regression"] = _format_factor_result(dict(extras.get("portfolio_regression", {})))
+        ctx["portfolio_regression_ex_mom"] = _format_factor_result(dict(extras.get("portfolio_regression_ex_mom", {})))
+    else:
+        ctx["fund_regression"] = None
+        ctx["portfolio_regression"] = None
+        ctx["portfolio_regression_ex_mom"] = None
 
     # Weekly Return Attribution (pre-computed)
     ctx["weekly_attribution_blocks"] = extras.get("weekly_attribution_blocks", [])

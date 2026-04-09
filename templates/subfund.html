@@ -179,7 +179,7 @@
 
 <!-- Factor Exposure (ETF Proxies) -->
 {% if etf_factors %}
-<div class="section-header">Factor Exposure (ETF Proxies)</div>
+<div class="section-header">Factor Exposure — ETF Proxies (Fund Level)</div>
 <div class="metrics-row">
     <div class="metric-card">
         <div class="metric-label">R&sup2;</div>
@@ -198,6 +198,82 @@
     <div class="metric-card">
         <div class="metric-label">Idio. Vol (Ann.)</div>
         <div class="metric-value">{{ (etf_factors.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+<!-- Systematic-only: fund regression + current portfolio regressions -->
+{% if fund_regression %}
+<div class="section-header">Fund Regression (Historical Returns)</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(fund_regression.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ fund_regression.alpha | color_class }}">{{ (fund_regression.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in fund_regression.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (fund_regression.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+{% if portfolio_regression %}
+<div class="section-header">Current Portfolio Regression</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(portfolio_regression.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ portfolio_regression.alpha | color_class }}">{{ (portfolio_regression.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in portfolio_regression.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (portfolio_regression.idio_vol * 100) | fmt_pct }}</div>
+    </div>
+</div>
+<div style="margin-top: 1.5rem;"></div>
+{% endif %}
+
+{% if portfolio_regression_ex_mom %}
+<div class="section-header">Current Portfolio Regression (ex-Momentum)</div>
+<div class="metrics-row">
+    <div class="metric-card">
+        <div class="metric-label">R&sup2;</div>
+        <div class="metric-value">{{ "%.3f" | format(portfolio_regression_ex_mom.r_squared) }}</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Alpha (Ann.)</div>
+        <div class="metric-value {{ portfolio_regression_ex_mom.alpha | color_class }}">{{ (portfolio_regression_ex_mom.alpha * 100) | fmt_pct }}</div>
+    </div>
+    {% for fname, bval in portfolio_regression_ex_mom.factors.items() %}
+    <div class="metric-card">
+        <div class="metric-label">{{ fname }}</div>
+        <div class="metric-value {{ bval | color_class }}">{{ "%.3f" | format(bval) }}</div>
+    </div>
+    {% endfor %}
+    <div class="metric-card">
+        <div class="metric-label">Idio. Vol (Ann.)</div>
+        <div class="metric-value">{{ (portfolio_regression_ex_mom.idio_vol * 100) | fmt_pct }}</div>
     </div>
 </div>
 <div style="margin-top: 1.5rem;"></div>
