@@ -489,13 +489,19 @@ def _load_price_cache() -> pd.DataFrame:
     if not holder["loaded"]:
         if PRICE_CACHE_PATH.exists():
             try:
-                df = pd.read_csv(PRICE_CACHE_PATH, index_col=0, parse_dates=True)
-                # Cast to float32 — price data doesn't need float64 precision
-                # and this halves the memory footprint of the cache.
+                df = pd.read_csv(PRICE_CACHE_PATH, index_col=0)
+                # Force the index to a DatetimeIndex even if pandas left it
+                # as object dtype. Drop any rows whose index can't be parsed
+                # — this prevents `last_date < today` from raising
+                # `'<' not supported between instances of 'str' and 'Timestamp'`
+                # when the cache file gets re-loaded after a corrupt write.
                 if not df.empty:
+                    df.index = pd.to_datetime(df.index, errors="coerce")
+                    df = df[df.index.notna()]
                     df = df.astype("float32")
                 holder["df"] = df if not df.empty else pd.DataFrame()
-            except Exception:
+            except Exception as e:
+                log.error(f"  Price cache load failed, starting fresh: {e}")
                 holder["df"] = pd.DataFrame()
         holder["loaded"] = True
         log.info(

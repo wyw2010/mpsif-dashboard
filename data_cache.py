@@ -41,7 +41,7 @@ _ready = threading.Event()
 
 def refresh():
     """Rebuild all sub-fund data. Called by background thread every 15 min."""
-    import concurrent.futures
+    import gc
 
     log.info("data_cache: refresh starting")
     new = {}
@@ -54,24 +54,18 @@ def refresh():
         _ready.set()
         return
 
-    # Build sub-funds in parallel (I/O bound — Alpaca API)
+    # Build sub-funds sequentially. Parallel builds previously OOM'd on
+    # Render's 512MB tier because four build_subfund calls each held a
+    # full price/positions DataFrame in memory simultaneously.
     subfund_data = {}
-    errors = []
-
-    def _load_one(name_path):
-        name, path = name_path
+    for name, path in existing:
         try:
-            return name, pf.build_subfund(str(path)), None
+            subfund_data[name] = pf.build_subfund(str(path))
         except Exception as e:
-            return name, None, str(e)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(existing)) as executor:
-        for name, data, err in executor.map(_load_one, existing):
-            if err is not None:
-                errors.append((name, err))
-                log.error(f"data_cache: error loading {name}: {err}")
-            elif data is not None:
-                subfund_data[name] = data
+            import traceback
+            log.error(f"data_cache: error loading {name}: {e}")
+            log.error(traceback.format_exc())
+        gc.collect()
 
     new["subfund_data"] = subfund_data
 
@@ -107,12 +101,19 @@ def refresh():
             fund_extras[name] = _precompute_fund_extras(name, d)
             log.info(f"data_cache: precomputed extras for {name}")
         except Exception as e:
+            import traceback
             log.error(f"data_cache: error precomputing extras for {name}: {e}")
+            log.error(traceback.format_exc())
             fund_extras[name] = {}
+        gc.collect()
     new["fund_extras"] = fund_extras
 
+    # Replace cache atomically. The previous snapshot drops out of scope
+    # so peak refresh memory ≈ one cache copy, not two.
     with _lock:
+        _cache.clear()
         _cache.update(new)
+    gc.collect()
 
     _ready.set()
     log.info(f"data_cache: refresh complete — {len(subfund_data)} sub-funds loaded")
