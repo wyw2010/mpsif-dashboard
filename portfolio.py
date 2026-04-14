@@ -1520,7 +1520,7 @@ def _compute_etf_factor_betas_uncached(port_rets: pd.Series, start: str, end: st
 #     df = df[df["Subtheme"].apply(lambda x: isinstance(x, str))]
 #     return dict(zip(df["Symbol"], df["Subtheme"]))
 
-def load_theme_map(filepath="data/Portfolio_Positions_04-06-2026.xlsx - Sheet1.csv") -> dict:
+def load_theme_map(filepath="data/Portfolio_Positions_04-13-2026.csv") -> dict:
     df = pd.read_csv(filepath)
     df = df.dropna(subset=["Symbol", "Subtheme"])
     # Filter out non-string subthemes (junk rows like 649.71)
